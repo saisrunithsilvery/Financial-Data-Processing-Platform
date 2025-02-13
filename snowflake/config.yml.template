@@ -1,0 +1,37 @@
+snowflake:
+  account: "${SNOWFLAKE_ACCOUNT}"
+  user: "${SNOWFLAKE_USER}"
+  password: "${SNOWFLAKE_PASSWORD}"
+  warehouse: "${SNOWFLAKE_WAREHOUSE}"
+  database: "${SNOWFLAKE_DATABASE}"
+  schema: "${SNOWFLAKE_SCHEMA}"
+  role: "${SNOWFLAKE_ROLE}"
+
+s3_stage:
+  name: "${S3_STAGE_NAME}"
+  url: "${S3_BUCKET_URL}"
+  storage_integration: "${STORAGE_INTEGRATION_NAME}"
+
+file_paths:
+  sql_dir: "sql"
+  tables_dir: "sql/tables"
+  load_dir: "sql/load"
+  setup_dir: "sql/setup"  
+
+data_files:
+  sub: "sub.txt"
+  num: "num.txt"
+  tag: "tag.txt"
+  pre: "pre.txt"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "pipeline.log"
+
+error_handling:
+  max_retries: 3
+  retry_delay: 60
+  stop_on_error: true
+
+environment: "development"

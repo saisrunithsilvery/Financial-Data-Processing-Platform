@@ -1,0 +1,14 @@
+# Core dependencies
+snowflake-connector-python==3.13.2
+PyYAML==6.0.1
+pathlib==1.0.1
+
+# Required by snowflake-connector
+cryptography>=41.0.0
+pyarrow>=14.0.1
+
+# Logging
+python-json-logger==2.0.7
+
+# Optional - for environment variables
+python-dotenv==1.0.0
