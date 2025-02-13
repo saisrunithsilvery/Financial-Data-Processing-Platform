@@ -3,8 +3,12 @@ CREATE OR REPLACE STORAGE INTEGRATION s3_int
   TYPE = EXTERNAL_STAGE
   STORAGE_PROVIDER = 'S3'
   ENABLED = TRUE
-  STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::891377329304:role/snowflake_access_role'
+  STORAGE_AWS_ACCESS_KEY = '{s3_config['aws_access_key']}'
+  STORAGE_AWS_SECRET_KEY = '{s3_config['aws_secret_key']}'
   STORAGE_ALLOWED_LOCATIONS = ('s3://damgassign02/unziped_folder/2018q4/');
+
+-- Describe the storage integration
+DESC STORAGE INTEGRATION s3_int;
 
 -- 2. Grant integration usage to role
 GRANT USAGE ON INTEGRATION s3_int TO ROLE accountadmin;

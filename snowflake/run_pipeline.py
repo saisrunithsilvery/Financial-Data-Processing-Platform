@@ -19,7 +19,17 @@ class PipelineRunner:
         """Load configuration from YAML file"""
         try:
             with open(config_path, 'r') as f:
-                return yaml.safe_load(f)
+                config = yaml.safe_load(f)
+                
+            # Replace environment variable placeholders
+            for key, value in os.environ.items():
+                for section in config.values():
+                    if isinstance(section, dict):
+                        for k, v in section.items():
+                            if isinstance(v, str) and v.startswith(f'${{{key}}}'):
+                                section[k] = value
+            
+            return config
         except Exception as e:
             raise Exception(f"Error loading config file: {str(e)}")
 
@@ -44,12 +54,43 @@ class PipelineRunner:
                 user=sf_config['user'],
                 password=sf_config['password'],
                 warehouse=sf_config['warehouse'],
-                role=sf_config.get('role')
+                role=sf_config.get('role', 'ACCOUNTADMIN')
             )
             self.cursor = self.conn.cursor()
             self.logger.info("Successfully connected to Snowflake")
         except Exception as e:
             self.logger.error(f"Failed to connect to Snowflake: {str(e)}")
+            raise
+
+    def _setup_storage_integration(self):
+        """Set up storage integration and grant necessary privileges"""
+        try:
+            integration_name = self.config['s3_stage']['storage_integration']
+            s3_config = self.config['s3_stage']
+            
+            # Try to describe the integration to check if it exists
+            try:
+                self.cursor.execute(f"DESC STORAGE INTEGRATION {integration_name}")
+                self.logger.info(f"Storage integration {integration_name} already exists")
+            except snowflake.connector.errors.ProgrammingError:
+                # If integration doesn't exist, create it
+                create_integration_sql = f"""
+                CREATE OR REPLACE STORAGE INTEGRATION {integration_name}
+                    TYPE = EXTERNAL_STAGE
+                    STORAGE_PROVIDER = 'S3'
+                    ENABLED = TRUE
+                    STORAGE_AWS_ACCESS_KEY = '{s3_config['aws_access_key']}'
+                    STORAGE_AWS_SECRET_KEY = '{s3_config['aws_secret_key']}'
+                    STORAGE_ALLOWED_LOCATIONS = ('{s3_config['url']}');
+                """
+                self.cursor.execute(create_integration_sql)
+                self.logger.info(f"Created storage integration: {integration_name}")
+            
+            # Grant integration usage - use ACCOUNTADMIN to ensure permissions
+            self.cursor.execute(f"GRANT USAGE ON INTEGRATION {integration_name} TO ROLE ACCOUNTADMIN")
+            
+        except Exception as e:
+            self.logger.error(f"Storage integration setup failed: {str(e)}")
             raise
 
     def _setup_file_format(self):
@@ -86,6 +127,8 @@ class PipelineRunner:
             # Set warehouse
             self.cursor.execute(f"USE WAREHOUSE {sf_config['warehouse']}")
             
+            # We'll simplify privilege management
+            # Typically, this is handled by a Snowflake admin before running the pipeline
             self.logger.info(f"Database setup completed: {sf_config['database']}.{sf_config['schema']}")
         except Exception as e:
             self.logger.error(f"Database setup failed: {str(e)}")
@@ -98,16 +141,28 @@ class PipelineRunner:
             create_stage_sql = f"""
             CREATE OR REPLACE STAGE {stage_config['name']}
                 URL = '{stage_config['url']}'
+                CREDENTIALS = (
+                    AWS_KEY_ID = '{stage_config['aws_access_key']}'
+                    AWS_SECRET_KEY = '{stage_config['aws_secret_key']}'
+                )
                 FILE_FORMAT = TXT_FILE_FORMAT;
             """
             self.cursor.execute(create_stage_sql)
+            
+            # Simplified stage usage grant
+            self.cursor.execute(f"GRANT USAGE ON STAGE {stage_config['name']} TO ROLE ACCOUNTADMIN")
+            
             self.logger.info(f"Stage created: {stage_config['name']}")
         except Exception as e:
             self.logger.error(f"Stage setup failed: {str(e)}")
             raise
 
-    def execute_sql_file(self, file_path, retries=3):
+    def execute_sql_file(self, file_path, retries=None):
         """Execute SQL from file with retry logic"""
+        # Use retry settings from config if not specified
+        if retries is None:
+            retries = self.config['error_handling'].get('max_retries', 3)
+        
         retry_count = 0
         while retry_count < retries:
             try:
@@ -124,9 +179,9 @@ class PipelineRunner:
                 retry_count += 1
                 self.logger.error(f"Error executing {file_path}: {str(e)}")
                 if retry_count < retries:
-                    sleep(self.config['error_handling']['retry_delay'])
+                    sleep(self.config['error_handling'].get('retry_delay', 60))
                 else:
-                    if self.config['error_handling']['stop_on_error']:
+                    if self.config['error_handling'].get('stop_on_error', True):
                         raise
                     return False
 
@@ -150,9 +205,27 @@ class PipelineRunner:
         if not load_dir.exists():
             raise Exception(f"Load directory not found: {load_dir}")
         
+        # Get AWS credentials from config
+        aws_key_id = self.config['s3_stage']['aws_access_key']
+        aws_secret_key = self.config['s3_stage']['aws_secret_key']
+        
         for sql_file in sorted(load_dir.glob('*.sql')):
-            if not self.execute_sql_file(sql_file):
-                raise Exception(f"Failed to load data from {sql_file}")
+            try:
+                with open(sql_file, 'r') as f:
+                    sql = f.read()
+                    self.logger.info(f"Executing SQL from {sql_file}")
+                    
+                    # Execute each statement separately
+                    for statement in sql.split(';'):
+                        if statement.strip():
+                            # Replace AWS credentials in the SQL
+                            statement = statement.replace(':aws_key_id', f"'{aws_key_id}'")
+                            statement = statement.replace(':aws_secret_key', f"'{aws_secret_key}'")
+                            self.cursor.execute(statement.strip())
+                
+            except Exception as e:
+                self.logger.error(f"Failed to load data from {sql_file}: {str(e)}")
+                raise
 
     def validate_loaded_data(self):
         """Validate loaded data"""
@@ -171,22 +244,25 @@ class PipelineRunner:
         try:
             self.logger.info(f"Starting pipeline in {self.config['environment']} environment")
             
-            # Step 1: Setup database and schema
+            # Step 1: Setup storage integration
+            self._setup_storage_integration()
+            
+            # Step 2: Setup database and schema
             self._setup_database()
             
-            # Step 2: Setup file format
+            # Step 3: Setup file format
             self._setup_file_format()
             
-            # Step 3: Setup stage
+            # Step 4: Setup stage
             self._setup_stage()
             
-            # Step 4: Create tables
+            # Step 5: Create tables
             self.run_table_creation()
             
-            # Step 5: Load data
+            # Step 6: Load data
             self.run_data_loading()
             
-            # Step 6: Validate data
+            # Step 7: Validate data
             self.validate_loaded_data()
             
             self.logger.info("Pipeline completed successfully")
