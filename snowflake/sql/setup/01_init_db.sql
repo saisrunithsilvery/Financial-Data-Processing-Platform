@@ -5,7 +5,7 @@ CREATE OR REPLACE STORAGE INTEGRATION s3_int
   ENABLED = TRUE
   STORAGE_AWS_ACCESS_KEY = '{s3_config['aws_access_key']}'
   STORAGE_AWS_SECRET_KEY = '{s3_config['aws_secret_key']}'
-  STORAGE_ALLOWED_LOCATIONS = ('s3://damgassign02/unziped_folder/2018q4/');
+  STORAGE_ALLOWED_LOCATIONS = ('s3://damgassign02/unziped_folder/');
 
 -- Describe the storage integration
 DESC STORAGE INTEGRATION s3_int;
@@ -33,7 +33,7 @@ CREATE OR REPLACE FILE FORMAT TXT_FILE_FORMAT
 
 -- 6. Create stage with explicit permissions
 CREATE OR REPLACE STAGE s3_stage
-  URL = 's3://damgassign02/unziped_folder/2018q4/'
+  URL = 's3://damgassign02/unziped_folder/'
   STORAGE_INTEGRATION = s3_int
   FILE_FORMAT = TXT_FILE_FORMAT;
 

@@ -39,9 +39,14 @@ quarter = st.selectbox("Select Quarter:", ["Q1", "Q2", "Q3", "Q4"])
 
 # Extract Button
 if st.button("Extract"):
-    response = requests.post("http://127.0.0.1:8000/extract", json={"year": year, "quarter": quarter})
-    if response.status_code == 200:
-        data = response.json()
-        st.success(data["message"])
-    else:
-        st.error("Failed to extract data!")
+    try:
+        response = requests.post("http://127.0.0.1:8000/extract", 
+                               json={"year": year, "quarter": quarter})
+        if response.status_code == 200:
+            data = response.json()
+            st.success(data["message"])
+        else:
+            st.error(f"Failed to extract data! Status: {response.status_code}")
+            st.error(f"Error details: {response.text}")
+    except Exception as e:
+        st.error(f"Request failed: {str(e)}")
