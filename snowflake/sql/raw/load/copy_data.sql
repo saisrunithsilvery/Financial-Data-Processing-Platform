@@ -1,4 +1,43 @@
-COPY INTO SUB FROM @s3_stage/ FILES = ('sub.txt') FILE_FORMAT = TXT_FILE_FORMAT;
-COPY INTO num FROM @s3_stage/ FILES = ('num.txt') FILE_FORMAT = TXT_FILE_FORMAT;
-COPY INTO TAG FROM @s3_stage/ FILES = ('tag.txt') FILE_FORMAT = TXT_FILE_FORMAT;
-COPY INTO pre FROM @s3_stage/ FILES = ('pre.txt') FILE_FORMAT = TXT_FILE_FORMAT;
+-- Copy data from sub.txt
+COPY INTO SUB 
+FROM @s3_stage/ 
+FILES = ('sub.txt') 
+FILE_FORMAT = TXT_FILE_FORMAT
+CREDENTIALS = (
+    AWS_KEY_ID = :aws_key_id
+    AWS_SECRET_KEY = :aws_secret_key
+)
+ON_ERROR = 'ABORT_STATEMENT';
+
+-- Copy data from num.txt
+COPY INTO NUM 
+FROM @s3_stage/ 
+FILES = ('num.txt') 
+FILE_FORMAT = TXT_FILE_FORMAT
+CREDENTIALS = (
+    AWS_KEY_ID = :aws_key_id
+    AWS_SECRET_KEY = :aws_secret_key
+)
+ON_ERROR = 'ABORT_STATEMENT';
+
+-- Copy data from tag.txt
+COPY INTO TAG 
+FROM @s3_stage/ 
+FILES = ('tag.txt') 
+FILE_FORMAT = TXT_FILE_FORMAT
+CREDENTIALS = (
+    AWS_KEY_ID = :aws_key_id
+    AWS_SECRET_KEY = :aws_secret_key
+)
+ON_ERROR = 'ABORT_STATEMENT';
+
+-- Copy data from pre.txt
+COPY INTO PRE 
+FROM @s3_stage/ 
+FILES = ('pre.txt') 
+FILE_FORMAT = TXT_FILE_FORMAT
+CREDENTIALS = (
+    AWS_KEY_ID = :aws_key_id
+    AWS_SECRET_KEY = :aws_secret_key
+)
+ON_ERROR = 'ABORT_STATEMENT';
