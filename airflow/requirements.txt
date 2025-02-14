@@ -1,2 +1,10 @@
-apache-airflow
+apache-airflow==2.9.0
 apache-airflow-providers-amazon
+apache-airflow-providers-snowflake
+fastapi
+snowflake-connector-python
+boto3
+python-multipart
+psycopg2-binary
+setuptools
+PyYAML
