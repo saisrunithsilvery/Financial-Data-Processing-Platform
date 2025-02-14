@@ -1,8 +1,11 @@
+
 from airflow import DAG
+# from airflow.operators.python import PythonOperator
+from airflow.providers.snowflake.operators.snowflake import SnowflakeCheckOperator
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from airflow.operators.python import PythonOperator
+# from airflow.operators.bash import BashOperator
 from datetime import datetime, timedelta
+from airflow.providers.snowflake.transfers.s3_to_snowflake import S3ToSnowflakeOperator
 import os
 from dotenv import load_dotenv
 
@@ -36,15 +39,15 @@ dag = DAG(
 # **Step 1: Test Snowflake Connection**
 test_conn = SnowflakeOperator(
     task_id='test_snowflake_connection',
-    snowflake_conn_id='snowflake_default',
+    snowflake_conn_id='snowflake_conn',
     sql="SELECT CURRENT_TIMESTAMP;",
     dag=dag
 )
 
 # **Step 2: Create Snowflake Stage**
-create_stage = SnowflakeOperator(
+create_stage = SnowflakeCheckOperator(
     task_id='create_s3_stage',
-    snowflake_conn_id='snowflake_default',
+    snowflake_conn_id='snowflake_conn',
     sql=f"""
     CREATE STAGE IF NOT EXISTS financial_stage
     URL='s3://{S3_BUCKET}/{S3_FOLDER}'
@@ -54,9 +57,9 @@ create_stage = SnowflakeOperator(
 )
 
 # **Step 3: Create JSON File Format**
-create_json_file_format = SnowflakeOperator(
+create_json_file_format = SnowflakeCheckOperator(
     task_id='create_json_file_format',
-    snowflake_conn_id='snowflake_default',
+    snowflake_conn_id='snowflake_conn',
     sql="""
     CREATE FILE FORMAT IF NOT EXISTS json_format 
     TYPE = 'JSON';
@@ -65,9 +68,9 @@ create_json_file_format = SnowflakeOperator(
 )
 
 # **Step 4: Create Snowflake Tables**
-create_tables = SnowflakeOperator(
+create_tables = SnowflakeCheckOperator(
     task_id='create_snowflake_tables',
-    snowflake_conn_id='snowflake_default',
+    snowflake_conn_id='snowflake_conn',
     sql="""
     CREATE TABLE IF NOT EXISTS financial_metadata (
         startDate DATE,
@@ -102,9 +105,9 @@ create_tables = SnowflakeOperator(
 )
 
 # **Step 5: Load JSON Data into Snowflake**
-load_data_to_snowflake = SnowflakeOperator(
+load_data_to_snowflake = SnowflakeCheckOperator(
     task_id='load_financial_data',
-    snowflake_conn_id='snowflake_default',
+    snowflake_conn_id='snowflake_conn',
     sql=f"""
     COPY INTO financial_metadata
     FROM (SELECT 
@@ -148,4 +151,4 @@ load_data_to_snowflake = SnowflakeOperator(
 )
 
 # **Task Dependencies**
-test_conn >> create_json_file_format >> create_stage >> create_tables >> load_data_to_snowflake
+test_conn >> create_stage >> create_json_file_format >> create_tables >> load_data_to_snowflake
