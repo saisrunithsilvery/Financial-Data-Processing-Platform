@@ -3,9 +3,15 @@ from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.sensors.s3 import S3KeySensor
 from airflow.models import Variable
 from datetime import datetime, timedelta
-from query_controller import process_extraction
-from run_pipeline import PipelineRunner
-from models.query_model import QueryRequest
+import os
+import sys
+
+# Add the parent directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from backend.controllers.query_controller import process_extraction
+from backend.models.query_model import QueryRequest
+from snowflake.run_pipeline import PipelineRunner
 
 default_args = {
     'owner': 'airflow',
