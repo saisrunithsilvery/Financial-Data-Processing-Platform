@@ -24,7 +24,7 @@ app.add_middleware(
 
 # Include routers with proper prefixes
 
-app.include_router(query_router, prefix="/extract", tags=["extraction"])
+app.include_router(query_router, tags=["extraction"])
 
 # Health check endpoint at root level
 @app.get("/", tags=["health"])
