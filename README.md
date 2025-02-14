@@ -235,6 +235,4 @@ Assignment02/
 This project is **open-source** under the **MIT License**. See `LICENSE` for details.  
 
 
-### **AI Tools and Technologies Used**
-- **OpenAI GPT-4**: Assisted in debugging issues, and optimizing SQL queries.
-- **Calude**: Used for improving database performance and query efficiency.Explored for potential automation of financial data insights.
+
