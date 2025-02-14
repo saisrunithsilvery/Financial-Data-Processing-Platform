@@ -1,180 +1,98 @@
-# airflow/dags/s3_processing_dag.py
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.providers.amazon.aws.sensors.s3 import S3KeySensor
+from airflow.models import Variable
 from datetime import datetime, timedelta
-import boto3
-from botocore.exceptions import ClientError
-import zipfile
-from io import BytesIO
-import sys
-import os
+from query_controller import process_extraction
+from run_pipeline import PipelineRunner
+from models.query_model import QueryRequest
 
-# Add path for importing snowflake pipeline
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from snowflake.run_pipeline import PipelineRunner
-
-# DAG configuration
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'email_on_failure': False,
+    'email_on_failure': True,
     'email_on_retry': False,
-    'retries': 1,
-    'retry_delay': timedelta(minutes=5)
+    'retries': 3,
+    'retry_delay': timedelta(minutes=5),
 }
 
-# S3 Configuration
-s3_client = boto3.client('s3')
-BUCKET_NAME = 'damgassign02'
+def extract_and_process_files(year, quarter, **context):
+    """
+    Extract and process files from S3
+    """
+    request = QueryRequest(year=year, quarter=quarter)
+    result = process_extraction(request)
+    # Store the execution date for downstream tasks
+    context['task_instance'].xcom_push(key='execution_date', value=result['execution_date'])
+    return result['uploaded_files']
 
-def check_files(**context):
-    """Check if files exist in S3"""
-    year = context['dag_run'].conf.get('year')
-    quarter = context['dag_run'].conf.get('quarter')
-    if not year or not quarter:
-        raise ValueError("Year and quarter must be provided")
-
-    quarter_lower = str(quarter).lower().replace('q', '')
-    unzipped_pattern = f"unziped_folder/{year}q{quarter_lower}/"
-    finance_pattern = f"Finance/{year}q{quarter_lower}/"
-    
-    # Check unzipped folder first
-    unzipped_response = s3_client.list_objects_v2(
-        Bucket=BUCKET_NAME,
-        Prefix=unzipped_pattern
+def run_snowflake_pipeline(year, quarter, config_path, **context):
+    """
+    Run the Snowflake data pipeline
+    """
+    runner = PipelineRunner(
+        config_path=config_path,
+        year=year,
+        quarter=quarter
     )
-    
-    if 'Contents' in unzipped_response:
-        context['task_instance'].xcom_push(
-            key='file_status',
-            value={'exists': True, 'location': 'unzipped'}
+    runner.run_data_loading()
+    runner.validate_loaded_data()
+
+def create_finance_pipeline_dag(
+    dag_id='finance_data_pipeline',
+    schedule='0 0 1 */3 *',  # Run quarterly
+    config_path='config.yaml'
+):
+    dag = DAG(
+        dag_id,
+        default_args=default_args,
+        description='Finance data processing pipeline',
+        schedule=schedule,
+        start_date=datetime(2024, 1, 1),
+        catchup=False,
+        tags=['finance', 'quarterly'],
+    )
+
+    with dag:
+        # Calculate year and quarter based on execution date
+        year = "{{ execution_date.year }}"
+        quarter = "{{ (execution_date.month - 1) // 3 + 1 }}"
+        
+        # Check if source file exists in S3
+        check_s3_file = S3KeySensor(
+            task_id='check_s3_file',
+            bucket_name='damgassign02',
+            bucket_key=f'Finance/{year}q{quarter}/',
+            poke_interval=300,  # Check every 5 minutes
+            timeout=3600,  # Timeout after 1 hour
+            mode='poke'
         )
-        return True
-    
-    # Check Finance folder
-    finance_response = s3_client.list_objects_v2(
-        Bucket=BUCKET_NAME,
-        Prefix=finance_pattern
-    )
-    
-    if 'Contents' in finance_response:
-        file_key = finance_response['Contents'][0]['Key']
-        context['task_instance'].xcom_push(
-            key='file_status',
-            value={
-                'exists': True,
-                'location': 'finance',
-                'file_key': file_key
+
+        # Extract and process files
+        extract_files = PythonOperator(
+            task_id='extract_files',
+            python_callable=extract_and_process_files,
+            op_kwargs={
+                'year': year,
+                'quarter': quarter
             }
         )
-        return True
-        
-    raise ValueError(f"No files found for {year}Q{quarter}")
 
-def process_files(**context):
-    """Process and unzip files if needed"""
-    year = context['dag_run'].conf.get('year')
-    quarter = str(context['dag_run'].conf.get('quarter'))
-    
-    file_status = context['task_instance'].xcom_pull(
-        key='file_status',
-        task_ids='check_files'
-    )
-    
-    if not file_status:
-        raise ValueError("No file status found")
-        
-    if file_status['location'] == 'unzipped':
-        return "Files already processed"
-    
-    quarter_lower = quarter.lower().replace('q', '')
-    file_key = file_status['file_key']
-    
-    # Get and process zip file
-    try:
-        response = s3_client.get_object(Bucket=BUCKET_NAME, Key=file_key)
-        zip_content = response['Body'].read()
-        
-        uploaded_files = []
-        with BytesIO(zip_content) as zip_buffer:
-            with zipfile.ZipFile(zip_buffer) as zip_ref:
-                for file_name in zip_ref.namelist():
-                    if file_name.endswith('/'):
-                        continue
-                        
-                    with zip_ref.open(file_name) as file:
-                        file_content = file.read()
-                        target_key = f'unziped_folder/{year}q{quarter_lower}/{file_name}'
-                        
-                        s3_client.put_object(
-                            Bucket=BUCKET_NAME,
-                            Key=target_key,
-                            Body=file_content
-                        )
-                        uploaded_files.append(target_key)
-        
-        context['task_instance'].xcom_push(
-            key='processed_files',
-            value=uploaded_files
+        # Run Snowflake pipeline
+        load_to_snowflake = PythonOperator(
+            task_id='load_to_snowflake',
+            python_callable=run_snowflake_pipeline,
+            op_kwargs={
+                'year': year,
+                'quarter': quarter,
+                'config_path': config_path
+            }
         )
-        return f"Processed {len(uploaded_files)} files"
-        
-    except Exception as e:
-        raise Exception(f"Error processing files: {str(e)}")
 
-def run_snowflake_pipeline(**context):
-    """Execute Snowflake pipeline"""
-    try:
-        year = context['dag_run'].conf.get('year')
-        quarter = context['dag_run'].conf.get('quarter')
-        quarter_num = int(str(quarter).lower().replace('q', ''))
-        
-        pipeline = PipelineRunner(
-            config_path='snowflake/config.yaml',
-            year=year,
-            quarter=quarter_num
-        )
-        
-        success = pipeline.run_pipeline()
-        if not success:
-            raise Exception("Pipeline execution failed")
-            
-        return "Pipeline executed successfully"
-        
-    except Exception as e:
-        raise Exception(f"Pipeline error: {str(e)}")
+        # Define task dependencies
+        check_s3_file >> extract_files >> load_to_snowflake
 
-# Create DAG
-with DAG(
-    'process_files_dag',
-    default_args=default_args,
-    description='Process S3 files and run Snowflake pipeline',
-    schedule_interval=None,  # Only triggered manually
-    start_date=datetime(2024, 1, 1),
-    catchup=False,
-    tags=['s3', 'snowflake'],
-) as dag:
-    
-    # Task 1: Check if files exist
-    check_files = PythonOperator(
-        task_id='check_files',
-        python_callable=check_files,
-        provide_context=True,
-    )
-    
-    # Task 2: Process files if needed
-    process_files = PythonOperator(
-        task_id='process_files',
-        python_callable=process_files,
-        provide_context=True,
-    )
-    
-    # Task 3: Run Snowflake pipeline
-    run_pipeline = PythonOperator(
-        task_id='run_pipeline',
-        python_callable=run_snowflake_pipeline,
-        provide_context=True,
-    )
-    
-    # Set task dependencies
-    check_files >> process_files >> run_pipeline
+    return dag
+
+# Create the DAG
+finance_pipeline_dag = create_finance_pipeline_dag()
