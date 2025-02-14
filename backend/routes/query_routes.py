@@ -5,7 +5,7 @@ from typing import Dict, Any
 
 router = APIRouter()
 
-@router.post("/")
+@router.post("/extract")
 async def extract_data(request: QueryRequest) -> Dict[str, Any]:
     """
     Trigger data extraction pipeline
