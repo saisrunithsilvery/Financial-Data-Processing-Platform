@@ -3,3 +3,4 @@ uvicorn
 pydantic
 apache-airflow
 apache-airflow-client
+boto3

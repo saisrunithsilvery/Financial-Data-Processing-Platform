@@ -1,45 +1,65 @@
 from fastapi import HTTPException
-from models.query_model import QueryRequest
+from pydantic import BaseModel, validator
+import os
 from datetime import datetime
 from typing import Dict, Any
-from utils.s3_operations import s3_ops
 import airflow_client.client
 from airflow_client.client.api import dag_api, dag_run_api
 from airflow_client.client.exceptions import NotFoundException
-from config import AIRFLOW_CONFIG
 import logging
 import time
 
+class QueryRequest(BaseModel):
+    year: int
+    quarter: str
+    
+    @validator('quarter')
+    def validate_quarter(cls, v):
+        valid_quarters = ['Q1', 'Q2', 'Q3', 'Q4']
+        if v not in valid_quarters:
+            raise ValueError(f'Quarter must be one of {valid_quarters}')
+        return v
+
+    @validator('year')
+    def validate_year(cls, v):
+        if not 2000 <= v <= 2100:
+            raise ValueError('Year must be between 2000 and 2100')
+        return v
+
 # Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class QueryController:
     def __init__(self):
         """Initialize QueryController with Airflow client configuration"""
+        self.airflow_host = os.getenv('AIRFLOW_HOST', 'airflow-webserver')
+        self.airflow_port = os.getenv('AIRFLOW_PORT', '8080')
+        self.airflow_username = os.getenv('AIRFLOW_USERNAME', 'admin')
+        self.airflow_password = os.getenv('AIRFLOW_PASSWORD', 'admin')
+        self.dag_id = os.getenv('AIRFLOW_DAG_ID', 's3_processing_dag')
+
         logger.info(
             "Initializing QueryController",
             extra={
-                "airflow_host": AIRFLOW_CONFIG['host'],
-                "dag_id": AIRFLOW_CONFIG['dag_id']
+                "airflow_host": f"http://{self.airflow_host}:{self.airflow_port}",
+                "dag_id": self.dag_id
             }
         )
         
         try:
-            # Remove trailing slash if present in host URL
-            host = AIRFLOW_CONFIG['host'].rstrip('/')
-            
-            # Configure Airflow client
+            # Configure Airflow client with the full API URL
+            api_base_url = f"http://{self.airflow_host}:{self.airflow_port}/api/v1"
             self.configuration = airflow_client.client.Configuration(
-                host=host,
-                username=AIRFLOW_CONFIG['username'],
-                password=AIRFLOW_CONFIG['password']
+                host=api_base_url,
+                username=self.airflow_username,
+                password=self.airflow_password
             )
             
             # Initialize API client with retry mechanism
             self.api_client = self._create_api_client_with_retry()
             self.dag_api = dag_api.DAGApi(self.api_client)
             self.dag_run_api = dag_run_api.DAGRunApi(self.api_client)
-            self.dag_id = AIRFLOW_CONFIG['dag_id']
             
             # Verify DAG exists
             self._verify_dag_exists()
@@ -68,6 +88,7 @@ class QueryController:
                 return api_client
             except Exception as e:
                 if attempt == max_retries - 1:
+                    logger.error(f"Failed to create API client after {max_retries} attempts: {str(e)}")
                     raise
                 logger.warning(f"API client creation attempt {attempt + 1} failed, retrying...")
                 time.sleep(2 ** attempt)  # Exponential backoff
@@ -77,15 +98,18 @@ class QueryController:
         try:
             self.dag_api.get_dag(dag_id=self.dag_id)
         except NotFoundException:
-            raise ValueError(f"DAG '{self.dag_id}' not found in Airflow. Please ensure it's properly deployed.")
+            error_msg = f"DAG '{self.dag_id}' not found in Airflow. Please ensure it's properly deployed."
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         except Exception as e:
-            raise ValueError(f"Error verifying DAG existence: {str(e)}")
+            error_msg = f"Error verifying DAG existence: {str(e)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
     def _sanitize_dag_run_id(self, dag_run_id: str) -> str:
         """Sanitize DAG run ID to ensure it's valid"""
-        # Replace invalid characters and ensure proper length
         sanitized = dag_run_id.replace(" ", "_").replace(":", "-")
-        return sanitized[:250]  # Airflow typically has a length limit
+        return sanitized[:250]
 
     async def process_extraction(self, request: QueryRequest) -> Dict[str, Any]:
         """Trigger Airflow DAG for extraction process"""
@@ -185,8 +209,6 @@ class QueryController:
                 status_code=500,
                 detail=f"Failed to trigger pipeline: {str(e)}"
             )
-
-    # ... (rest of the methods remain the same) ...
 
 # Create controller instance
 logger.info("Creating QueryController instance")

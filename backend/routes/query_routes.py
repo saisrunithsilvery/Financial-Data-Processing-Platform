@@ -61,3 +61,14 @@ async def get_active_runs() -> Dict[str, Any]:
     except Exception as e:
         print(f"Unexpected error in get_active_runs: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+    
+@router.get("/health")
+async def health_check() -> Dict[str, str]:
+    """
+    Health check endpoint
+    
+    Returns:
+        Dict containing health status
+    """
+    return {"status": "ok"}
