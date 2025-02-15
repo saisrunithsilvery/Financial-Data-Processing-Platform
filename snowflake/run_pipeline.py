@@ -5,102 +5,199 @@ import snowflake.connector
 from pathlib import Path
 import argparse
 from time import sleep
-
 class PipelineRunner:
-    def __init__(self, config_path='config.yaml', year=None, quarter=None):
-        """Initialize pipeline with configuration and time parameters
-        
-        Args:
-            config_path (str): Path to configuration file
-            year (int): Year to process data for
-            quarter (int): Quarter to process data for (1-4)
-        """
-        self.year = year
-        self.quarter = quarter
-        self.validate_time_params()
-        self.period_folder = f"{self.year}q{self.quarter}"
-        
+    def __init__(self, config_path='config.yaml'):
+        """Initialize pipeline with configuration"""
         self.config = self._load_config(config_path)
         self._setup_logging()
         self.conn = None
         self.cursor = None
         self._connect_snowflake()
-
-    def validate_time_params(self):
-        """Validate year and quarter parameters"""
-        if self.year is None or self.quarter is None:
-            raise ValueError("Both year and quarter must be specified")
         
+    def _load_config(self, config_path):
+        """Load configuration from YAML file"""
         try:
-            self.year = int(self.year)
-            self.quarter = int(self.quarter)
-        except ValueError:
-            raise ValueError("Year and quarter must be valid integers")
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            raise Exception(f"Error loading config file: {str(e)}")
+    def _setup_logging(self):
+        """Configure logging based on config settings"""
+        log_config = self.config['logging']
+        logging.basicConfig(
+            level=getattr(logging, log_config['level']),
+            format=log_config['format'],
+            filename=log_config.get('file'),
+            filemode='a'
+        )
+        self.logger = logging.getLogger(__name__)
+    def _connect_snowflake(self):
+        """Establish connection to Snowflake"""
+        try:
+            sf_config = self.config['snowflake']
+            # Initial connection without database/schema
+            self.conn = snowflake.connector.connect(
+                account=sf_config['account'],
+                user=sf_config['user'],
+                password=sf_config['password'],
+                warehouse=sf_config['warehouse'],
+                role=sf_config.get('role')
+            )
+            self.cursor = self.conn.cursor()
+            self.logger.info("Successfully connected to Snowflake")
+        except Exception as e:
+            self.logger.error(f"Failed to connect to Snowflake: {str(e)}")
+            raise
+    def _setup_file_format(self):
+        """Set up file format for data loading"""
+        try:
+            create_file_format_sql = """
+            CREATE OR REPLACE FILE FORMAT TXT_FILE_FORMAT
+                TYPE = CSV
+                FIELD_DELIMITER = '\t'
+                SKIP_HEADER = 1
+                FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+                TRIM_SPACE = TRUE
+                ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE;
+            """
+            self.cursor.execute(create_file_format_sql)
+            self.logger.info("File format TXT_FILE_FORMAT created successfully")
+        except Exception as e:
+            self.logger.error(f"File format setup failed: {str(e)}")
+            raise
+    
+    def _setup_database(self):
+        """Set up database and schema"""
+        try:
+            sf_config = self.config['snowflake']
             
-        if self.year < 1900 or self.year > 2100:
-            raise ValueError("Year must be between 1900 and 2100")
+            # Create database if not exists
+            self.cursor.execute(f"CREATE DATABASE IF NOT EXISTS {sf_config['database']}")
+            self.cursor.execute(f"USE DATABASE {sf_config['database']}")
             
-        if self.quarter not in [1, 2, 3, 4]:
-            raise ValueError("Quarter must be between 1 and 4")
-
-    def run_data_loading(self):
-        """Load data into tables for specified year and quarter"""
-        load_dir = Path(self.config['file_paths']['load_dir'])
-        self.logger.info(f"Starting data loading for period: {self.period_folder}...")
-        
-        if not load_dir.exists():
-            raise Exception(f"Load directory not found: {load_dir}")
-        
-        # Get AWS credentials from config
-        aws_key_id = self.config['s3_stage']['aws_access_key']
-        aws_secret_key = self.config['s3_stage']['aws_secret_key']
-        
-        for sql_file in sorted(load_dir.glob('*.sql')):
+            # Create schema if not exists
+            self.cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {sf_config['schema']}")
+            self.cursor.execute(f"USE SCHEMA {sf_config['schema']}")
+            
+            # Set warehouse
+            self.cursor.execute(f"USE WAREHOUSE {sf_config['warehouse']}")
+            
+            self.logger.info(f"Database setup completed: {sf_config['database']}.{sf_config['schema']}")
+        except Exception as e:
+            self.logger.error(f"Database setup failed: {str(e)}")
+            raise
+    def _setup_stage(self):
+        """Set up S3 stage"""
+        try:
+            stage_config = self.config['s3_stage']
+            create_stage_sql = f"""
+            CREATE OR REPLACE STAGE {stage_config['name']}
+                URL = '{stage_config['url']}'
+                FILE_FORMAT = TXT_FILE_FORMAT;
+            """
+            self.cursor.execute(create_stage_sql)
+            self.logger.info(f"Stage created: {stage_config['name']}")
+        except Exception as e:
+            self.logger.error(f"Stage setup failed: {str(e)}")
+            raise
+    def execute_sql_file(self, file_path, retries=3):
+        """Execute SQL from file with retry logic"""
+        retry_count = 0
+        while retry_count < retries:
             try:
-                with open(sql_file, 'r') as f:
+                with open(file_path, 'r') as f:
                     sql = f.read()
-                    self.logger.info(f"Executing SQL from {sql_file} for period {self.period_folder}")
+                    self.logger.info(f"Executing SQL from {file_path}")
                     
                     # Execute each statement separately
                     for statement in sql.split(';'):
                         if statement.strip():
-                            # Replace AWS credentials and period parameters in the SQL
-                            statement = statement.replace(':aws_key_id', f"'{aws_key_id}'")
-                            statement = statement.replace(':aws_secret_key', f"'{aws_secret_key}'")
-                            statement = statement.replace(':period_folder', f"'{self.period_folder}'")
-                            statement = statement.replace(':year', str(self.year))
-                            statement = statement.replace(':quarter', str(self.quarter))
                             self.cursor.execute(statement.strip())
-                
+                    return True
             except Exception as e:
-                self.logger.error(f"Failed to load data from {sql_file}: {str(e)}")
-                raise
-
+                retry_count += 1
+                self.logger.error(f"Error executing {file_path}: {str(e)}")
+                if retry_count < retries:
+                    sleep(self.config['error_handling']['retry_delay'])
+                else:
+                    if self.config['error_handling']['stop_on_error']:
+                        raise
+                    return False
+    def run_table_creation(self):
+        """Create database tables"""
+        tables_dir = Path(self.config['file_paths']['tables_dir'])
+        self.logger.info("Starting table creation...")
+        
+        if not tables_dir.exists():
+            raise Exception(f"Tables directory not found: {tables_dir}")
+        
+        for sql_file in sorted(tables_dir.glob('*.sql')):
+            if not self.execute_sql_file(sql_file):
+                raise Exception(f"Failed to create tables from {sql_file}")
+    def run_data_loading(self):
+        """Load data into tables"""
+        load_dir = Path(self.config['file_paths']['load_dir'])
+        self.logger.info("Starting data loading...")
+        
+        if not load_dir.exists():
+            raise Exception(f"Load directory not found: {load_dir}")
+        
+        for sql_file in sorted(load_dir.glob('*.sql')):
+            if not self.execute_sql_file(sql_file):
+                raise Exception(f"Failed to load data from {sql_file}")
     def validate_loaded_data(self):
-        """Validate loaded data for the specified year and quarter"""
+        """Validate loaded data"""
         try:
             tables = ['SUB', 'TAG', 'NUM', 'PRE']
-            
             for table in tables:
-                # Count total rows
                 self.cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                total_count = self.cursor.fetchone()[0]
-                
-                # Count rows for the specific period
-                self.cursor.execute(f"""
-                    SELECT COUNT(*) 
-                    FROM {table} 
-                    WHERE period = '{self.period_folder}'
-                """)
-                period_count = self.cursor.fetchone()[0]
-                
-                self.logger.info(f"Table {table}:")
-                self.logger.info(f"  - Total rows: {total_count}")
-                self.logger.info(f"  - Rows for {self.period_folder}: {period_count}")
+                count = self.cursor.fetchone()[0]
+                self.logger.info(f"Table {table} contains {count} rows")
         except Exception as e:
             self.logger.error(f"Data validation failed: {str(e)}")
             raise
-
+    def run_pipeline(self):
+        """Execute the complete pipeline"""
+        try:
+            self.logger.info(f"Starting pipeline in {self.config['environment']} environment")
+            
+            # Step 1: Setup database and schema
+            self._setup_database()
+            
+            # Step 2: Setup file format
+            self._setup_file_format()
+            
+            # Step 3: Setup stage
+            self._setup_stage()
+            
+            # Step 4: Create tables
+            self.run_table_creation()
+            
+            # Step 5: Load data
+            self.run_data_loading()
+            
+            # Step 6: Validate data
+            self.validate_loaded_data()
+            
+            self.logger.info("Pipeline completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Pipeline failed: {str(e)}")
+            return False
+            
+        finally:
+            self.cleanup()
+    def cleanup(self):
+        """Clean up resources"""
+        try:
+            if hasattr(self, 'cursor') and self.cursor:
+                self.cursor.close()
+            if hasattr(self, 'conn') and self.conn:
+                self.conn.close()
+            self.logger.info("Cleaned up Snowflake connection")
+        except Exception as e:
+            self.logger.error(f"Cleanup failed: {str(e)}")
 def main():
     parser = argparse.ArgumentParser(description='Run Snowflake data pipeline')
     parser.add_argument('--config', default='config.yaml', 
@@ -108,20 +205,15 @@ def main():
     parser.add_argument('--environment', default='development',
                       choices=['development', 'staging', 'production'],
                       help='Environment to run in')
-    parser.add_argument('--year', type=int, required=True,
-                      help='Year to process data for')
-    parser.add_argument('--quarter', type=int, choices=[1, 2, 3, 4], required=True,
-                      help='Quarter to process data for (1-4)')
     
     args = parser.parse_args()
     
     try:
-        runner = PipelineRunner(args.config, args.year, args.quarter)
+        runner = PipelineRunner(args.config)
         success = runner.run_pipeline()
         exit(0 if success else 1)
     except Exception as e:
         logging.error(f"Pipeline execution failed: {str(e)}")
         exit(1)
-
 if __name__ == "__main__":
     main()
