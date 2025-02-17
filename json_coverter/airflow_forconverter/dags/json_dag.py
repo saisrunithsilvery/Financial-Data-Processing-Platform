@@ -72,19 +72,7 @@ create_file_format = SnowflakeOperator(
     """,
     dag=dag
 )
-# Create stage
-# create_stage = SnowflakeOperator(
-#     task_id="create_s3_stage",
-#     snowflake_conn_id="snowflake_conn",
-#     sql="""
-#     CREATE STAGE IF NOT EXISTS financial_stage
-#     URL='s3://damgassign02/Extracted_json_files/2022q4/'
-#     CREDENTIALS = (AWS_KEY_ID='AKIA47CR2USMBXVBOSXH' 
-#                   AWS_SECRET_KEY='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')
-#     FILE_FORMAT = json_format;              
-#     """,
-#     dag=dag
-# )
+
 
 
 
