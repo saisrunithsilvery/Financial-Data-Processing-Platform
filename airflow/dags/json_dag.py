@@ -1,14 +1,14 @@
 """
 DAG for loading financial data from S3 to Snowflake
 """
- 
+
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from airflow.operators.bash import BashOperator
 from datetime import datetime, timedelta
 from airflow.hooks.base import BaseHook
- 
+
 # Default arguments
 default_args = {
     'owner': 'airflow',
@@ -18,66 +18,60 @@ default_args = {
     'retries': 1,
     'retry_delay': timedelta(minutes=5),
 }
- 
+
 # DAG Definition
 dag = DAG(
-    's3_to_snowflake_financial_raw_data',
+    's3_to_snowflake_financial_data',
     default_args=default_args,
     description='Extract financial data from S3 and load to Snowflake',
     schedule_interval='@daily',
     catchup=False
 )
- 
+
 # Initialize Snowflake Database
 init_database = SnowflakeOperator(
-    task_id='Init_database',
+    task_id='init_database',
     snowflake_conn_id='snowflake_conn',
     sql="""
     USE ROLE ACCOUNTADMIN;
-    CREATE OR REPLACE WAREHOUSE FINANCIAL_WH
-    WAREHOUSE_SIZE = 'X-SMALL'
-    AUTO_SUSPEND = 300
-    AUTO_RESUME = TRUE
-    INITIALLY_SUSPENDED = TRUE;
-    DROP DATABASE IF EXISTS SEC_DATA_RAW;
- 
-    CREATE OR REPLACE DATABASE SEC_DATA_RAW;
-    CREATE OR REPLACE SCHEMA public;
- 
-    USE DATABASE SEC_DATA;
-    USE SCHEMA PUBLIC;
+    CREATE DATABASE IF NOT EXISTS FINANCIAL_DB;
+    USE DATABASE FINANCIAL_DB;
+    CREATE SCHEMA IF NOT EXISTS FINANCIAL_SCHEMA;
+    USE SCHEMA FINANCIAL_SCHEMA;
     """,
     dag=dag
 )
 
+
+
 create_stage = SnowflakeOperator(
-    task_id='Connect_to_s3_stage',
+    task_id='create_s3_stage',
     snowflake_conn_id='snowflake_conn',
     sql="""
     CREATE OR REPLACE STAGE my_s3_stage
-    STORAGE_INTEGRATION = my_s3_integration
-    URL = 's3://damgassign02/Extracted_json_files/2024q4'
+    STORAGE_INTEGRATION = S3_INT
+    URL = 's3://damgassign02/Extracted_json_files/'
     FILE_FORMAT = (TYPE = JSON);
     """,
     dag=dag
 )
- 
-# # Create File Format
-# create_file_format = SnowflakeOperator(
-#     task_id="create_file_format",
-#     snowflake_conn_id="snowflake_conn",
-#     sql="""
-#     CREATE OR REPLACE FILE FORMAT json_format
-#     TYPE = 'JSON'
-#     STRIP_OUTER_ARRAY = FALSE
-#     COMPRESSION = NONE
-#     ENABLE_OCTAL = FALSE
-#     ALLOW_DUPLICATE = FALSE
-#     STRIP_NULL_VALUES = FALSE
-#     IGNORE_UTF8_ERRORS = TRUE;
-#     """,
-#     dag=dag
-# )
+
+# Create File Format
+create_file_format = SnowflakeOperator(
+    task_id="create_file_format",
+    snowflake_conn_id="snowflake_conn",
+    sql="""
+    CREATE OR REPLACE FILE FORMAT json_format
+    TYPE = 'JSON'
+    STRIP_OUTER_ARRAY = FALSE
+    COMPRESSION = NONE
+    ENABLE_OCTAL = FALSE
+    ALLOW_DUPLICATE = FALSE
+    STRIP_NULL_VALUES = FALSE
+    IGNORE_UTF8_ERRORS = TRUE;
+    """,
+    dag=dag
+)
 # Create stage
 # create_stage = SnowflakeOperator(
 #     task_id="create_s3_stage",
@@ -85,15 +79,15 @@ create_stage = SnowflakeOperator(
 #     sql="""
 #     CREATE STAGE IF NOT EXISTS financial_stage
 #     URL='s3://damgassign02/Extracted_json_files/2022q4/'
-#     CREDENTIALS = (AWS_KEY_ID='AKIA47CR2USMBXVBOSXH'
+#     CREDENTIALS = (AWS_KEY_ID='AKIA47CR2USMBXVBOSXH' 
 #                   AWS_SECRET_KEY='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')
 #     FILE_FORMAT = json_format;              
 #     """,
 #     dag=dag
 # )
- 
- 
- 
+
+
+
 # Create Tables
 create_tables = SnowflakeOperator(
     task_id='create_tables',
@@ -115,7 +109,7 @@ create_tables = SnowflakeOperator(
         city VARCHAR,
         CONSTRAINT unique_symbol UNIQUE (symbol)
     );
- 
+
     -- Financial data table for both balance sheet and cash flow
     CREATE TABLE IF NOT EXISTS financial_data (
         id INTEGER AUTOINCREMENT PRIMARY KEY,
@@ -125,7 +119,7 @@ create_tables = SnowflakeOperator(
         info VARCHAR,
         unit VARCHAR,
         value FLOAT,
-        CONSTRAINT fk_symbol FOREIGN KEY (symbol)
+        CONSTRAINT fk_symbol FOREIGN KEY (symbol) 
             REFERENCES financial_metadata(symbol)
             ON DELETE CASCADE
             ON UPDATE CASCADE
@@ -133,7 +127,7 @@ create_tables = SnowflakeOperator(
     """,
     dag=dag
 )
- 
+
 # Load Metadata
 load_metadata = SnowflakeOperator(
     task_id='load_metadata',
@@ -141,7 +135,7 @@ load_metadata = SnowflakeOperator(
     sql="""
     COPY INTO financial_metadata (startDate, endDate, year, quarter, symbol, name, country, city)
     FROM (
-        SELECT
+        SELECT 
             $1:startDate::DATE,
             $1:endDate::DATE,
             $1:year::INT,
@@ -150,7 +144,7 @@ load_metadata = SnowflakeOperator(
             $1:name::STRING,
             $1:country::STRING,
             $1:city::STRING
-        FROM @s3_stage (PATTERN => '.*\.json')
+        FROM @my_s3_stage/2022q4/ (PATTERN => '.*\.json')
     )
     FILE_FORMAT = json_format
     ON_ERROR = 'CONTINUE'
@@ -158,7 +152,7 @@ load_metadata = SnowflakeOperator(
     """,
     dag=dag
 )
- 
+
 # Load Balance Sheet Data
 # Load Balance Sheet Data
 load_balance_sheet = SnowflakeOperator(
@@ -172,7 +166,7 @@ load_balance_sheet = SnowflakeOperator(
     
     -- Load raw JSON data
     COPY INTO tmp_raw_json (raw_json)
-    FROM @financial_stage
+    FROM @my_s3_stage/2022q4/
     FILE_FORMAT = json_format
     PATTERN = '.*\.json'
     ON_ERROR = 'CONTINUE'
@@ -180,7 +174,7 @@ load_balance_sheet = SnowflakeOperator(
     
     -- Transform and insert data
     INSERT INTO financial_data (symbol, data_type, concept, info, unit, value)
-    SELECT
+    SELECT 
         raw_json:symbol::STRING as symbol,
         'bs' as data_type,
         bs.value:concept::STRING as concept,
@@ -195,7 +189,7 @@ load_balance_sheet = SnowflakeOperator(
     """,
     dag=dag
 )
- 
+
 # Load Cash Flow Data
 load_cash_flow = SnowflakeOperator(
     task_id='load_cash_flow',
@@ -208,7 +202,7 @@ load_cash_flow = SnowflakeOperator(
     
     -- Load raw JSON data
     COPY INTO tmp_raw_json (raw_json)
-    FROM @financial_stage
+    FROM @my_s3_stage/2022q4/
     FILE_FORMAT = json_format
     PATTERN = '.*\.json'
     ON_ERROR = 'CONTINUE'
@@ -216,7 +210,7 @@ load_cash_flow = SnowflakeOperator(
     
     -- Transform and insert data
     INSERT INTO financial_data (symbol, data_type, concept, info, unit, value)
-    SELECT
+    SELECT 
         raw_json:symbol::STRING as symbol,
         'cf' as data_type,
         cf.value:concept::STRING as concept,
@@ -237,20 +231,20 @@ validate_load = SnowflakeOperator(
     snowflake_conn_id='snowflake_conn',
     sql="""
     -- Check for proper data loading
-    SELECT
+    SELECT 
         'Metadata Count' as check_type,
         COUNT(*) as record_count,
         COUNT(DISTINCT symbol) as unique_symbols
     FROM financial_metadata
     UNION ALL
-    SELECT
+    SELECT 
         'Financial Data Count',
         COUNT(*),
         COUNT(DISTINCT symbol)
     FROM financial_data;
     
     -- Check for data consistency
-    SELECT
+    SELECT 
         'Orphaned Records' as check_type,
         COUNT(*) as count
     FROM financial_data fd
@@ -259,6 +253,6 @@ validate_load = SnowflakeOperator(
     """,
     dag=dag
 )
- 
+
 # Set up task dependencies
-init_database  >> s3_integration >>create_stage >> create_tables >> load_metadata >> [load_balance_sheet, load_cash_flow] >> validate_load
+init_database >> create_tables >> load_metadata >> [load_balance_sheet, load_cash_flow] >> validate_load
