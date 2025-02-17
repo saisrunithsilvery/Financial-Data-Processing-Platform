@@ -72,19 +72,7 @@ create_file_format = SnowflakeOperator(
     """,
     dag=dag
 )
-# Create stage
-# create_stage = SnowflakeOperator(
-#     task_id="create_s3_stage",
-#     snowflake_conn_id="snowflake_conn",
-#     sql="""
-#     CREATE STAGE IF NOT EXISTS financial_stage
-#     URL='s3://damgassign02/Extracted_json_files/2022q4/'
-#     CREDENTIALS = (AWS_KEY_ID='AKIA47CR2USMBXVBOSXH' 
-#                   AWS_SECRET_KEY='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')
-#     FILE_FORMAT = json_format;              
-#     """,
-#     dag=dag
-# )
+
 
 
 
@@ -144,7 +132,7 @@ load_metadata = SnowflakeOperator(
             $1:name::STRING,
             $1:country::STRING,
             $1:city::STRING
-        FROM @my_s3_stage/2022q4/ (PATTERN => '.*\.json')
+        FROM @my_s3_stage/{{ dag_run.conf.get('s3_folder', 'default_folder') }}/ (PATTERN => '.*\.json')
     )
     FILE_FORMAT = json_format
     ON_ERROR = 'CONTINUE'
@@ -166,7 +154,7 @@ load_balance_sheet = SnowflakeOperator(
     
     -- Load raw JSON data
     COPY INTO tmp_raw_json (raw_json)
-    FROM @my_s3_stage/2022q4/
+    FROM @my_s3_stage/{{ dag_run.conf.get('s3_folder', 'default_folder') }}/
     FILE_FORMAT = json_format
     PATTERN = '.*\.json'
     ON_ERROR = 'CONTINUE'
@@ -202,7 +190,7 @@ load_cash_flow = SnowflakeOperator(
     
     -- Load raw JSON data
     COPY INTO tmp_raw_json (raw_json)
-    FROM @my_s3_stage/2022q4/
+    FROM @my_s3_stage/{{ dag_run.conf.get('s3_folder', 'default_folder') }}/
     FILE_FORMAT = json_format
     PATTERN = '.*\.json'
     ON_ERROR = 'CONTINUE'
