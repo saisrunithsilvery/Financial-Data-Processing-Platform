@@ -1,193 +1,249 @@
 from fastapi import HTTPException
 from models.query_model import QueryRequest
+import boto3
+from botocore.exceptions import ClientError
+import zipfile
+from io import BytesIO
 from datetime import datetime
-from typing import Dict, Any
-from utils.s3_operations import s3_ops
-import airflow_client.client
-from airflow_client.client.api import dag_api, dag_run_api
-from airflow_client.client.exceptions import NotFoundException
-from config import AIRFLOW_CONFIG
-import logging
-import time
+from typing import Optional, List, Dict, Any
 
-# Configure logging
-logger = logging.getLogger(__name__)
+s3_client = boto3.client('s3')
+BUCKET_NAME = 'damgassign02'
 
-class QueryController:
-    def __init__(self):
-        """Initialize QueryController with Airflow client configuration"""
-        logger.info(
-            "Initializing QueryController",
-            extra={
-                "airflow_host": AIRFLOW_CONFIG['host'],
-                "dag_id": AIRFLOW_CONFIG['dag_id']
-            }
+async def check_file_exists(prefix: str, year: int, quarter: str) -> Optional[List[str]]:
+    """
+    Check if files exist in the given S3 prefix
+    
+    Args:
+        prefix (str): S3 prefix to search in
+        year (int): Year to search for
+        quarter (str): Quarter to search for
+    
+    Returns:
+        Optional[List[str]]: List of file keys if found, None otherwise
+    """
+    try:
+        quarter_lower = quarter.lower().replace('q', '')
+        file_pattern = f"{prefix}/{year}q{quarter_lower}"
+        print(f"Checking for files in: {file_pattern}")
+        
+        response = s3_client.list_objects_v2(
+            Bucket=BUCKET_NAME,
+            Prefix=file_pattern
         )
         
-        try:
-            # Remove trailing slash if present in host URL
-            host = AIRFLOW_CONFIG['host'].rstrip('/')
+        contents = response.get('Contents', [])
+        if not contents:
+            return None
             
-            # Configure Airflow client
-            self.configuration = airflow_client.client.Configuration(
-                host=host,
-                username=AIRFLOW_CONFIG['username'],
-                password=AIRFLOW_CONFIG['password']
-            )
-            
-            # Initialize API client with retry mechanism
-            self.api_client = self._create_api_client_with_retry()
-            self.dag_api = dag_api.DAGApi(self.api_client)
-            self.dag_run_api = dag_run_api.DAGRunApi(self.api_client)
-            self.dag_id = AIRFLOW_CONFIG['dag_id']
-            
-            # Verify DAG exists
-            self._verify_dag_exists()
-            
-            logger.info("QueryController initialization successful")
-            
-        except Exception as e:
-            logger.error(
-                "Failed to initialize QueryController",
-                extra={
-                    "error_type": type(e).__name__,
-                    "error_message": str(e)
-                },
-                exc_info=True
-            )
-            raise
+        # Return all files found in the directory
+        return [obj['Key'] for obj in contents]
+        
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=f"Error accessing S3: {str(e)}")
 
-    def _create_api_client_with_retry(self, max_retries=3):
-        """Create API client with retry mechanism"""
-        for attempt in range(max_retries):
-            try:
-                api_client = airflow_client.client.ApiClient(self.configuration)
-                # Test connection
-                test_api = dag_api.DAGApi(api_client)
-                test_api.get_dags()
-                return api_client
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise
-                logger.warning(f"API client creation attempt {attempt + 1} failed, retrying...")
-                time.sleep(2 ** attempt)  # Exponential backoff
-
-    def _verify_dag_exists(self):
-        """Verify that the configured DAG exists"""
-        try:
-            self.dag_api.get_dag(dag_id=self.dag_id)
-        except NotFoundException:
-            raise ValueError(f"DAG '{self.dag_id}' not found in Airflow. Please ensure it's properly deployed.")
-        except Exception as e:
-            raise ValueError(f"Error verifying DAG existence: {str(e)}")
-
-    def _sanitize_dag_run_id(self, dag_run_id: str) -> str:
-        """Sanitize DAG run ID to ensure it's valid"""
-        # Replace invalid characters and ensure proper length
-        sanitized = dag_run_id.replace(" ", "_").replace(":", "-")
-        return sanitized[:250]  # Airflow typically has a length limit
-
-    async def process_extraction(self, request: QueryRequest) -> Dict[str, Any]:
-        """Trigger Airflow DAG for extraction process"""
-        logger.info(
-            "Processing extraction request",
-            extra={
-                "year": request.year,
-                "quarter": request.quarter,
-                "timestamp": datetime.now().isoformat()
-            }
+async def find_zip_file(prefix: str, year: int, quarter: str) -> Optional[str]:
+    """
+    Find zip file in the given S3 prefix
+    
+    Args:
+        prefix (str): S3 prefix to search in
+        year (int): Year to search for
+        quarter (str): Quarter to search for
+    
+    Returns:
+        Optional[str]: Zip file key if found, None otherwise
+    """
+    try:
+        quarter_lower = quarter.lower().replace('q', '')
+        file_pattern = f"{prefix}/{year}q{quarter_lower}"
+        
+        response = s3_client.list_objects_v2(
+            Bucket=BUCKET_NAME,
+            Prefix=file_pattern
         )
         
-        try:
-            execution_date = datetime.now().isoformat()
-            dag_run_id = self._sanitize_dag_run_id(f"extract_{execution_date}")
-            
-            logger.debug(
-                "Preparing DAG run configuration",
-                extra={
-                    "dag_id": self.dag_id,
-                    "dag_run_id": dag_run_id,
-                    "execution_date": execution_date
-                }
+        contents = response.get('Contents', [])
+        for obj in contents:
+            if obj['Key'].endswith('.zip'):
+                return obj['Key']
+        return None
+        
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=f"Error accessing S3: {str(e)}")
+
+async def unzip_and_upload(file_key: str, year: int, quarter: str) -> List[str]:
+    """
+    Download zip file from S3, unzip it, and upload contents
+    
+    Args:
+        file_key (str): S3 key of the zip file
+        year (int): Year for target path
+        quarter (str): Quarter for target path
+    
+    Returns:
+        List[str]: List of uploaded file keys
+    """
+    try:
+        print(f"Unzipping file: {file_key}")
+        response = s3_client.get_object(Bucket=BUCKET_NAME, Key=file_key)
+        zip_content = response['Body'].read()
+        uploaded_files = []
+        quarter_lower = quarter.lower().replace('q', '')
+        
+        with BytesIO(zip_content) as zip_buffer:
+            with zipfile.ZipFile(zip_buffer) as zip_ref:
+                for file_name in zip_ref.namelist():
+                    if file_name.endswith('/'):  # Skip directories
+                        continue
+                        
+                    with zip_ref.open(file_name) as file:
+                        file_content = file.read()
+                        target_key = f'unziped_folder/{year}q{quarter_lower}/{file_name}'
+                        
+                        s3_client.put_object(
+                            Bucket=BUCKET_NAME,
+                            Key=target_key,
+                            Body=file_content
+                        )
+                        uploaded_files.append(target_key)
+                        
+        return uploaded_files
+        
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=f"Error with S3: {str(e)}")
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid zip file")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error during file processing: {str(e)}")
+async def trigger_snowflake_pipeline(year: int, quarter: str) -> Dict[str, Any]:
+    """
+    Trigger Snowflake data loading pipeline via REST API
+    
+    Args:
+        year (int): Year to process
+        quarter (str): Quarter to process (Q1-Q4)
+    
+    Returns:
+        Dict[str, Any]: Pipeline execution status
+    """
+    try:
+        snowflake_url = "http://localhost:8001/load-data"  # Configure in environment/config
+        
+        
+        payload = {
+            "year": year,
+            "quarter": quarter,
+         
+        }
+        
+        print(f"Triggering Snowflake pipeline: {payload}")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                snowflake_url,
+                json=payload,
+                timeout=300  # 5 minutes timeout for long-running operations
             )
             
-            # Create DAG run with retry mechanism
-            for attempt in range(3):
-                try:
-                    dag_run = self.dag_run_api.post_dag_run(
-                        dag_id=self.dag_id,
-                        dag_run={
-                            'dag_run_id': dag_run_id,
-                            'conf': {
-                                'year': request.year,
-                                'quarter': request.quarter,
-                                'execution_date': execution_date
-                            }
-                        }
-                    )
-                    break
-                except airflow_client.client.ApiException as e:
-                    if attempt == 2 or e.status != 404:
-                        raise
-                    logger.warning(f"DAG run creation attempt {attempt + 1} failed, retrying...")
-                    time.sleep(2 ** attempt)
-            
-            logger.info(
-                "Successfully triggered Airflow DAG",
-                extra={
-                    "dag_run_id": dag_run.dag_run_id,
-                    "status": "processing",
-                    "execution_date": execution_date
-                }
-            )
-            
-            return {
-                "message": "Pipeline triggered successfully",
-                "status": "processing",
-                "run_id": dag_run.dag_run_id,
-                "execution_date": execution_date,
-                "dag_id": self.dag_id
-            }
-            
-        except airflow_client.client.ApiException as e:
-            error_message = str(e)
-            if e.status == 404:
-                error_message = f"DAG '{self.dag_id}' not found or not accessible"
-            elif e.status == 401:
-                error_message = "Authentication failed. Please check Airflow credentials"
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Snowflake service error: {response.text}"
+                )
                 
-            logger.error(
-                "Airflow API error during extraction process",
-                extra={
-                    "error_status": e.status,
-                    "error_message": error_message,
-                    "request_year": request.year,
-                    "request_quarter": request.quarter
-                },
-                exc_info=True
-            )
-            raise HTTPException(
-                status_code=e.status,
-                detail=f"Airflow API error: {error_message}"
-            )
-        except Exception as e:
-            logger.error(
-                "Unexpected error during extraction process",
-                extra={
-                    "error_type": type(e).__name__,
-                    "error_message": str(e),
-                    "request_year": request.year,
-                    "request_quarter": request.quarter
-                },
-                exc_info=True
-            )
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to trigger pipeline: {str(e)}"
-            )
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="Snowflake pipeline timed out"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to execute Snowflake pipeline: {str(e)}"
+        )
 
-    # ... (rest of the methods remain the same) ...
+async def process_extraction(request: QueryRequest) -> Dict[str, Any]:
+    """
+    Process the extraction request
+    
+    Args:
+        request (QueryRequest): Request containing year and quarter
+    
+    Returns:
+        Dict[str, Any]: Response containing status and file information
+    """
+    try:
+        execution_date = datetime.now().isoformat()
+        print(f"Processing request: {request}")
+        
+        # Step 1: Check unzipped folder first
+        unzipped_files = await check_file_exists('unziped_folder', request.year, request.quarter)
+        if unzipped_files:
+            return {
+                "message": "Files already exist in unzipped folder",
+                "status": "completed",
+                "files": unzipped_files,
+                "execution_date": execution_date
+            }
+        
+        # Step 2: Find zip file in Finance folder
+        zip_file = await find_zip_file('Finance', request.year, request.quarter)
+        if not zip_file:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Zip file not found for year {request.year}, quarter {request.quarter}"
+            )
+        
+        # Step 3: Process and upload file
+        print(f"Processing zip file: {zip_file}")
+        print(f"Year: {request.year}, Quarter: {request.quarter}")
+        
+        uploaded_files = await unzip_and_upload(
+            zip_file,
+            request.year,
+            request.quarter
+        )
+        
+        if uploaded_files:
+            # Trigger Snowflake pipeline
+            print("Triggering Snowflake pipeline")
+            pipeline_status = await trigger_snowflake_pipeline(
+                request.year,
+                request.quarter
+        )
+        
+        return {
+                "message": "Files processed and data loaded to Snowflake",
+                "status": "completed",
+                "source_file": zip_file,
+                "uploaded_files": uploaded_files,
+                "snowflake_status": pipeline_status,
+                "execution_date": execution_date
+        }
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
-# Create controller instance
-logger.info("Creating QueryController instance")
-query_controller = QueryController()
+async def get_extraction_status(execution_date: str) -> Dict[str, Any]:
+    """
+    Get status of extraction
+    
+    Args:
+        execution_date (str): Execution date to check status for
+    
+    Returns:
+        Dict[str, Any]: Status information
+    """
+    try:
+        return {
+            "status": "completed",
+            "execution_date": execution_date,
+            "message": "File processing is done synchronously"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking status: {str(e)}")

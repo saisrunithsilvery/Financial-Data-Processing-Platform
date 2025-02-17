@@ -1,0 +1,38 @@
+FROM apache/airflow:2.9.0-python3.10
+
+USER root
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+WORKDIR /opt/airflow
+
+# Create directories for volume mounts
+RUN mkdir -p ./dags
+RUN mkdir -p ./backend
+RUN mkdir -p ./snowflake
+
+# Create the airflow_setup.sh script
+RUN echo '#!/bin/bash\n\
+airflow db init\n\
+airflow users create \\\n\
+    --username admin \\\n\
+    --firstname Admin \\\n\
+    --lastname User \\\n\
+    --role Admin \\\n\
+    --email admin@example.com \\\n\
+    --password admin\n\
+airflow webserver & \n\
+airflow scheduler\n\
+wait' > /opt/airflow/airflow_setup.sh
+
+RUN chmod +x /opt/airflow/airflow_setup.sh
+
+EXPOSE 8080
+
+ENV AIRFLOW_HOME=/opt/airflow
+ENV PYTHONPATH=/opt/airflow:/opt/airflow/backend
+
+CMD ["/opt/airflow/airflow_setup.sh"]

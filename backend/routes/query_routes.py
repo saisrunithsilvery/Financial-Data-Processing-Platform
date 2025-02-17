@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from models.query_model import QueryRequest
-from controllers.query_controller import query_controller
+from controllers.query_controller import get_extraction_status, process_extraction
 from typing import Dict, Any
 
 router = APIRouter()
 
-@router.post("/")
+@router.post("/extract")
 async def extract_data(request: QueryRequest) -> Dict[str, Any]:
     """
     Trigger data extraction pipeline
@@ -16,7 +16,7 @@ async def extract_data(request: QueryRequest) -> Dict[str, Any]:
     try:
         print(f"Received request: {request}")
         
-        result = await query_controller.process_extraction(request)
+        result = await process_extraction(request)
         print(f"Pipeline result: {result}")
         return result
     except HTTPException as e:
@@ -37,27 +37,10 @@ async def check_status(run_id: str) -> Dict[str, Any]:
         Dict containing current pipeline status
     """
     try:
-        result = await query_controller.get_extraction_status(run_id)
+        result = await get_extraction_status(run_id)
         return result
     except HTTPException as e:
         raise e
     except Exception as e:
         print(f"Unexpected error in check_status: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/runs")
-async def get_active_runs() -> Dict[str, Any]:
-    """
-    Get all active pipeline runs
-    
-    Returns:
-        Dict containing list of active pipeline runs
-    """
-    try:
-        result = await query_controller.get_active_runs()
-        return result
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        print(f"Unexpected error in get_active_runs: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
