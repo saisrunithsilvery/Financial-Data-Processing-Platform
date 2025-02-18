@@ -1,7 +1,8 @@
 # main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes.query_routes import router as query_router
+from routes.extract_routes import router as extract_router
+from routes.query_routes import query_router
 from typing import Dict
 
 app = FastAPI(
@@ -24,7 +25,8 @@ app.add_middleware(
 
 # Include routers with proper prefixes
 
-app.include_router(query_router, tags=["extraction"])
+app.include_router(query_router, tags=["queries"])
+app.include_router(extract_router, tags=["extraction"])
 
 # Health check endpoint at root level
 @app.get("/", tags=["health"])
@@ -36,6 +38,15 @@ async def root() -> Dict[str, str]:
         "version": "1.0.0"
     }
 
+@app.get("/health", tags=["health"])
+async def health() -> Dict[str, str]:
+    """Health check endpoint for API"""
+    return {
+        "status": "online",
+        "service": "SEC Data Analysis API",
+        "version": "1.0.0"
+    }
+    
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

@@ -111,14 +111,20 @@ PREDEFINED_QUERIES = {
     """
 }
 
-def execute_query(query, api_endpoint="http://127.0.0.1:8000/query"):
+def execute_query(query, api_endpoint="http://127.0.0.1:8000/queries/execute"):
     """Execute SQL query through API endpoint"""
     try:
+        request_body = {"query": query}
+        st.write("Sending request:", request_body)  # Debug print
+        
         response = requests.post(
             api_endpoint,
-            json={"query": query},
+            json=request_body,
             timeout=30
         )
+        st.write("Response status:", response.status_code)  # Debug print
+        st.write("Response text:", response.text)  # Debug print
+        
         if response.status_code == 200:
             return pd.DataFrame(response.json()["data"])
         else:
@@ -127,7 +133,6 @@ def execute_query(query, api_endpoint="http://127.0.0.1:8000/query"):
     except Exception as e:
         st.error(f"Error executing query: {str(e)}")
         return None
-
 # Data Extraction Tab
 with tab1:
     st.header("Data Extraction")
@@ -135,6 +140,7 @@ with tab1:
     # Year and Quarter Dropdowns
     year = st.selectbox("Select Year:", list(range(2006, 2026)))
     quarter = st.selectbox("Select Quarter:", ["Q1", "Q2", "Q3", "Q4"])
+    ways = st.selectbox("Select Ways:", ["RAW", "JSON", "NORMALIZED"])
     
     # Extract functionality
     if st.button("Extract", key="extract_button", disabled=st.session_state.processing):
@@ -146,7 +152,7 @@ with tab1:
                 # Set a timeout for the request
                 response = requests.post(
                     "http://127.0.0.1:8000/extract",
-                    json={"year": year, "quarter": quarter},
+                    json={"year": year, "quarter": quarter, "way": ways},
                     timeout=10  # 10 second timeout
                 )
                 
@@ -188,6 +194,13 @@ with tab2:
             if df is not None:
                 st.success("Query executed successfully!")
                 st.dataframe(df)
+                
+                # Add to query history
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state.query_history.append({
+                    "timestamp": timestamp,
+                    "query": PREDEFINED_QUERIES[selected_query]
+                })
 
 # Custom Query Tab
 with tab3:
