@@ -1,0 +1,69 @@
+version: 2
+
+sources:
+  - name: sec_data
+    database: SEC_DATA
+    schema: PUBLIC
+    tables:
+      - name: pre
+        columns:
+          - name: adsh
+            tests:
+              - not_null
+          - name: report
+            tests:
+              - not_null
+          - name: rfile
+          - name: line
+            tests:
+              - not_null
+          - name: stmt
+          - name: prole
+          - name: negating
+      - name: num
+        columns:
+          - name: adsh
+            tests:
+              - not_null
+          - name: tag
+            tests:
+              - not_null
+          - name: value
+            tests:
+              - not_null:
+                  where: "tag NOT IN ('text_only_tags') AND value IS NOT NULL"
+          - name: uom
+      - name: sub
+        columns:
+          - name: adsh
+            tests:
+              - not_null
+          - name: fy
+          - name: fp
+          - name: period
+          - name: cik
+            tests:
+              - not_null
+      - name: tag
+        columns:
+          - name: tag
+            tests:
+              - not_null
+          - name: tlabel
+          - name: datatype
+
+
+# version: 2
+
+# sources:
+#   - name: sec_data
+#     database: SEC_DATA
+#     schema: PUBLIC
+#     tables:
+#       - name: num
+#       - name: sub
+#       - name: tag
+#       - name: pre
+#       - name: balance_sheet
+#       - name: income_statement
+#       - name: cash_flow

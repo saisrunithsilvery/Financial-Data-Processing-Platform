@@ -1,0 +1,169 @@
+version: 2
+
+models:
+  - name: fct_financial_statements
+    description: "Combined financial statements including balance sheet, income statement, and cash flow metrics"
+    tests:
+      - dbt_utils.expression_is_true:
+          expression: "filing_date >= '1900-01-01' AND filing_date <= '2100-01-01'"
+    columns:
+      - name: company_symbol
+        description: "The CIK (Central Index Key) identifier for the company"
+        tests:
+          - not_null
+          - relationships:
+              to: source('sec_data', 'sub')
+              field: cik
+      
+      - name: fiscal_year
+        description: "The fiscal year of the reported metrics"
+        tests:
+          - not_null
+      
+      - name: fiscal_period
+        description: "The fiscal period (Q1, Q2, Q3, Q4, or FY) of the reported metrics"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Q1', 'Q2', 'Q3', 'Q4', 'FY']
+      
+      - name: filing_date
+        description: "The date when the financial data was filed"
+        tests:
+          - not_null
+      
+      - name: metric_value
+        description: "The numerical value of the financial metric"
+        tests:
+          - not_null
+
+  - name: company_metrics
+    description: "Derived financial metrics and ratios for companies"
+    columns:
+      - name: company_symbol
+        tests:
+          - not_null
+          - unique
+
+
+
+# version: 2
+
+# models:
+#   - name: fct_financial_statements
+#     description: "Consolidated financial statements fact table"
+#     columns:
+#       - name: company_symbol
+#         description: "Company identifier (CIK)"
+#         tests:
+#           - not_null
+#           - relationships:
+#               to: source('sec_data', 'sub')
+#               field: cik
+
+#       - name: filing_date
+#         description: "Date when the financial statement was filed"
+#         tests:
+#           - not_null
+#           - dbt_utils.accepted_range:
+#               min_value: "'1900-01-01'::date"
+#               max_value: "'2100-12-31'::date"
+#               where: "filing_date IS NOT NULL"
+
+#       - name: fiscal_year
+#         description: "Fiscal year of the report"
+#         tests:
+#           - not_null
+#           - dbt_utils.accepted_range:
+#               min_value: 1900
+#               max_value: 2100
+
+#       - name: fiscal_period
+#         description: "Fiscal period (Q1, Q2, Q3, Q4, FY)"
+#         tests:
+#           - not_null
+#           - accepted_values:
+#               values: ['Q1', 'Q2', 'Q3', 'Q4', 'FY']
+
+#       - name: metric_value
+#         description: "Value of the financial metric"
+#         tests:
+#           - not_null:
+#               where: "metric_code NOT IN ('text_only_metrics', 'narrative_disclosure') 
+#                      AND source_file IN ('SEC_BALANCE_SHEET', 'SEC_INCOME_STATEMENT', 'SEC_CASH_FLOW')"
+
+#       - name: measurement_unit
+#         description: "Unit of measurement for the metric"
+#         tests:
+#           - not_null
+#           - accepted_values:
+#               values: ['USD', 'shares', 'ratio', 'percent']
+
+#       - name: source_file
+#         description: "Source of the financial data"
+#         tests:
+#           - not_null
+
+
+
+
+
+# version: 2
+
+# models:
+#   - name: fct_financial_statements
+#     description: "Consolidated financial statements fact table"
+#     columns:
+#       - name: company_symbol
+#         description: "Company identifier (CIK)"
+#         tests:
+#           - not_null
+#           - relationships:
+#               to: ref('stg_balance_sheet')
+#               field: company_symbol
+
+#       - name: filing_date
+#         description: "Date when the financial statement was filed"
+#         tests:
+#           - not_null
+#           - dbt_utils.accepted_range:
+#               min_value: "'1900-01-01'::date"
+#               max_value: "'2100-12-31'::date"
+#               where: "filing_date IS NOT NULL"
+
+#       - name: fiscal_year
+#         description: "Fiscal year of the report"
+#         tests:
+#           - not_null
+#           - dbt_utils.accepted_range:
+#               min_value: 1900
+#               max_value: 2100
+
+#       - name: fiscal_period
+#         description: "Fiscal period (Q1, Q2, Q3, Q4, FY)"
+#         tests:
+#           - not_null
+#           - accepted_values:
+#               values: ['Q1', 'Q2', 'Q3', 'Q4', 'FY']
+
+#       - name: metric_value
+#         description: "Value of the financial metric"
+#         tests:
+#           - not_null:
+#               where: "metric_code NOT IN ('text_only_metrics', 'narrative_disclosure') 
+#                      AND source_file IN ('SEC_BALANCE_SHEET', 'SEC_INCOME_STATEMENT', 'SEC_CASH_FLOW')"
+
+#       - name: measurement_unit
+#         description: "Unit of measurement for the metric"
+#         tests:
+#           - not_null
+#           - accepted_values:
+#               values: ['USD', 'shares', 'ratio', 'percent']
+
+#       - name: source_file
+#         description: "Source of the financial data"
+#         tests:
+#           - not_null
+
+
+

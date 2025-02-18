@@ -1,0 +1,111 @@
+# models/staging/staging.yml
+version: 2
+
+models:
+  - name: stg_balance_sheet
+    description: "Staging model for balance sheet data"
+    columns:
+      - name: company_symbol
+        tests:
+          - not_null
+      - name: fiscal_period
+        tests:
+          - accepted_values:
+              values: ['Q1', 'Q2', 'Q3', 'Q4', 'FY']
+              where: "fiscal_period is not null"
+
+  - name: stg_income_statement
+    description: "Staging model for income statement data"
+    columns:
+      - name: company_symbol
+        tests:
+          - not_null
+      - name: fiscal_period
+        tests:
+          - accepted_values:
+              values: ['Q1', 'Q2', 'Q3', 'Q4', 'FY']
+              where: "fiscal_period is not null"
+
+  - name: stg_cash_flow
+    description: "Staging model for cash flow data"
+    columns:
+      - name: company_symbol
+        tests:
+          - not_null
+      - name: fiscal_period
+        tests:
+          - accepted_values:
+              values: ['Q1', 'Q2', 'Q3', 'Q4', 'FY']
+              where: "fiscal_period is not null"
+
+
+
+
+
+# # models/staging/staging.yml
+# version: 2
+
+# models:
+#   - name: stg_balance_sheet
+#     description: "Staging model for balance sheet data"
+#     config:
+#       tags: ['staging', 'financial', 'balance_sheet']
+#     columns:
+#       - name: company_symbol
+#         description: "Company identifier (CIK)"
+#         tests:
+#           - not_null
+#           - dbt_utils.not_empty_string
+#       - name: fiscal_year
+#         description: "Fiscal year of the report"
+#         tests:
+#           - not_null
+#       - name: fiscal_period
+#         description: "Fiscal period (Q1, Q2, Q3, Q4, FY)"
+#         tests:
+#           - not_null
+#           - accepted_values:
+#               values: ['Q1', 'Q2', 'Q3', 'Q4', 'FY']
+
+#   - name: stg_income_statement
+#     description: "Staging model for income statement data"
+#     config:
+#       tags: ['staging', 'financial', 'income_statement']
+#     columns:
+#       - name: company_symbol
+#         description: "Company identifier (CIK)"
+#         tests:
+#           - not_null
+#           - dbt_utils.not_empty_string
+#       - name: fiscal_year
+#         description: "Fiscal year of the report"
+#         tests:
+#           - not_null
+#       - name: fiscal_period
+#         description: "Fiscal period (Q1, Q2, Q3, Q4, FY)"
+#         tests:
+#           - not_null
+#           - accepted_values:
+#               values: ['Q1', 'Q2', 'Q3', 'Q4', 'FY']
+
+#   - name: stg_cash_flow
+#     description: "Staging model for cash flow data"
+#     config:
+#       tags: ['staging', 'financial', 'cash_flow']
+#     columns:
+#       - name: company_symbol
+#         description: "Company identifier (CIK)"
+#         tests:
+#           - not_null
+#           - dbt_utils.not_empty_string
+#       - name: fiscal_year
+#         description: "Fiscal year of the report"
+#         tests:
+#           - not_null
+#       - name: fiscal_period
+#         description: "Fiscal period (Q1, Q2, Q3, Q4, FY)"
+#         tests:
+#           - not_null
+#           - accepted_values:
+#               values: ['Q1', 'Q2', 'Q3', 'Q4', 'FY']
+
