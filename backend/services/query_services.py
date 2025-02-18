@@ -2,11 +2,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 from datetime import datetime
 from database.snowflake_connection import SnowflakeConnection
-from models.query_model import QueryResponse
 
 class QueryService:
     @staticmethod
-    def execute_query(query: str) -> QueryResponse:
+    def execute_query(query: str):
         try:
             start_time = datetime.now()
             engine = SnowflakeConnection.create_engine()
@@ -18,11 +17,11 @@ class QueryService:
             
             execution_time = (datetime.now() - start_time).total_seconds()
             
-            return QueryResponse(
-                data=data,
-                columns=columns,
-                execution_time=execution_time
-            )
+            return {
+                "data": data,
+                "columns": columns,
+                "execution_time": execution_time
+            }
         
         except SQLAlchemyError as e:
             raise HTTPException(status_code=400, detail=f"Query execution failed: {str(e)}")

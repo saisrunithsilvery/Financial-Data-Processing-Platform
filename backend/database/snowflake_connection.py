@@ -9,7 +9,7 @@ class SnowflakeConnection:
         config = {
             "account": "rob31655.us-east-1",  # Full account identifier
             "user": "vishal_prasanna",
-            "password": "Northeastern@12",
+            "password": "Northeastern@123",
             "database": "SEC_DATA",
             "schema": "PUBLIC",
             "warehouse": "FINANCIAL_WH",
