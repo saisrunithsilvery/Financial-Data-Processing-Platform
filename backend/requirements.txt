@@ -4,3 +4,8 @@ pydantic
 apache-airflow
 apache-airflow-client
 boto3
+
+# Database
+sqlalchemy
+snowflake-sqlalchemy==1.5.1
+snowflake-connector-python==3.6.0

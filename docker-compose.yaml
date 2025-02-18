@@ -234,7 +234,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app
+      - ./backend:/app
     environment:
       - ENV=development
       - PYTHONDONTWRITEBYTECODE=1
