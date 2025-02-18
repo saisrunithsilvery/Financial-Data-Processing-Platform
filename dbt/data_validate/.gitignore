@@ -1,0 +1,59 @@
+
+# DBT generated directories
+target/
+dbt_packages/
+logs/
+
+# Profile configuration with sensitive credentials
+profiles.yml
+**/profiles.yml
+
+# Compiled SQL files
+**/compiled/
+**/compiled/**/*
+
+# Environment configuration
+.env
+
+# Local development files
+.user.yml
+**/local_development.yml
+
+# Editor specific files
+.idea/
+.vscode/
+*.sublime-*
+.DS_Store
+
+# Python-related files (if using Python helpers)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook related
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# Snowflake-related files (if applicable)
+*.snowsql
+
+# CSV or local data files (if applicable)
+*.csv
+local_data/
