@@ -114,21 +114,24 @@ PREDEFINED_QUERIES = {
 def execute_query(query, api_endpoint="http://127.0.0.1:8000/queries/execute"):
     """Execute SQL query through API endpoint"""
     try:
-        request_body = {"query": query}
-        st.write("Sending request:", request_body)  # Debug print
-        
         response = requests.post(
             api_endpoint,
-            json=request_body,
+            json={"query": query},
             timeout=30
         )
-        st.write("Response status:", response.status_code)  # Debug print
-        st.write("Response text:", response.text)  # Debug print
-        
         if response.status_code == 200:
-            return pd.DataFrame(response.json()["data"])
+            response_data = response.json()
+            if "data" in response_data:
+                df = pd.DataFrame(response_data["data"])
+                if response_data.get("execution_time"):
+                    st.info(f"Query executed in {response_data['execution_time']:.2f} seconds")
+                return df
+            else:
+                st.error("Invalid response format from server")
+                return None
         else:
-            st.error(f"Query failed: {response.text}")
+            error_msg = response.json().get("detail", "Unknown error occurred")
+            st.error(f"Query failed: {error_msg}")
             return None
     except Exception as e:
         st.error(f"Error executing query: {str(e)}")

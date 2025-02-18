@@ -32,10 +32,8 @@ class SQLQueryRequest(BaseModel):
     query: str
 
 class QueryResponse(BaseModel):
-    model_config = {
-        "arbitrary_types_allowed": True
-    }
-    data: List[Dict[str, Any]]
+    query: str  # This is required but missing in response
+    data: List[Dict]
     columns: List[str]
     execution_time: float
 
