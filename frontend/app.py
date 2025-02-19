@@ -183,9 +183,9 @@ tab1, tab2, tab3 = st.tabs(["Data Extraction", "Predefined Queries", "Custom Que
 
 def execute_query(query, data_format="RAW"):
     """Execute SQL query through API endpoint based on data format"""
-    api_endpoint = "http://127.0.0.1:8000/queries/execute"
+    api_endpoint = "http://backend:8000/queries/execute"
     if data_format == "JSON":
-        api_endpoint = "http://127.0.0.1:8000/queries/execute"
+        api_endpoint = "http://backend:8000/queries/execute"
         
     try:
         response = requests.post(
@@ -228,7 +228,7 @@ with tab1:
             # Show processing message
             with st.spinner('Extracting data...'):
                 response = requests.post(
-                    "http://127.0.0.1:8000/extract",
+                    "http://backend:8000/extract",
                     json={"year": year, "quarter": quarter, "way": ways},
                     timeout=10
                 )

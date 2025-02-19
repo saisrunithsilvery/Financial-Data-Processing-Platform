@@ -18,13 +18,13 @@ RUN apt-get update \
     && apt-get clean
 
 # Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+COPY ./backend/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the backend directory contents into /app
-COPY ./backend/ .
+COPY ./backend /app/backend
 
 # Create a non-root user
 RUN adduser --disabled-password --gecos '' appuser \

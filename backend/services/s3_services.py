@@ -4,7 +4,7 @@ from botocore.exceptions import ClientError
 import zipfile
 from io import BytesIO
 from typing import Optional, List
-from config.settings import Settings
+from backend.config.settings import Settings
 
 class S3Service:
     def __init__(self):

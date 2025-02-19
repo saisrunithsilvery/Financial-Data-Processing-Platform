@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
-from models.query_model import SQLQueryRequest, QueryResponse
-from services.query_services import QueryService
+from backend.models.query_model import SQLQueryRequest, QueryResponse
+from backend.services.query_services import QueryService
 import time
 
 query_router = APIRouter(

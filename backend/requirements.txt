@@ -1,11 +1,10 @@
 fastapi
 uvicorn
 pydantic
+gunicorn  # Optional, for production deployments
 apache-airflow
 apache-airflow-client
 boto3
-
-# Database
-sqlalchemy
-snowflake-sqlalchemy==1.5.1
-snowflake-connector-python==3.6.0
+sqlalchemy # Ensuring compatibility with Airflow
+snowflake-sqlalchemy
+snowflake-connector-python

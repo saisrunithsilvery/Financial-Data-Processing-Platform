@@ -1,8 +1,8 @@
 from fastapi import HTTPException
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from services.s3_services import S3Service
-from services.snowflake_services import SnowflakeService
+from backend.services.s3_services import S3Service
+from backend.services.snowflake_services import SnowflakeService
 
 class ExtractionService:
     def __init__(self):
