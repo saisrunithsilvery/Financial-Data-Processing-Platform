@@ -1,8 +1,8 @@
 # main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes.extract_routes import router as extract_router
-from routes.query_routes import query_router
+from backend.routes.extract_routes import router as extract_router
+from backend.routes.query_routes import query_router
 from typing import Dict
 
 app = FastAPI(

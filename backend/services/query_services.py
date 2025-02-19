@@ -1,7 +1,7 @@
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 from datetime import datetime
-from database.snowflake_connection import SnowflakeConnection
+from backend.database.snowflake_connection import SnowflakeConnection
 
 class QueryService:
     @staticmethod

@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 import httpx
 from typing import Dict, Any
-from config.settings import Settings
+from backend.config.settings import Settings
 
 class SnowflakeService:
     def __init__(self):

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
-from models.query_model import QueryRequest
-from controllers.extract_controller import ExtractionController
+from backend.models.query_model import QueryRequest
+from backend.controllers.extract_controller import ExtractionController
 from typing import Dict, Any
 from logging import getLogger
 

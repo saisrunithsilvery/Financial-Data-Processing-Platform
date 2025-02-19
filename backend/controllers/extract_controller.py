@@ -1,8 +1,8 @@
 from fastapi import HTTPException
 from datetime import datetime
 from typing import Dict, Any
-from models.query_model import QueryRequest
-from services.extraction_services import ExtractionService
+from backend.models.query_model import QueryRequest
+from backend.services.extraction_services import ExtractionService
 
 class ExtractionController:
     def __init__(self):
