@@ -4,7 +4,7 @@ from functools import lru_cache
 class Settings(BaseModel):
     """Application settings"""
     S3_BUCKET_NAME: str = "damgassign02"
-    AIRFLOW_URL: str = "http://localhost:8080/api/v1/dags/loading_raw_data_from_S3_to_Snowflake/dagRuns"
+    AIRFLOW_URL: str = "http://airflow-webserver:8080/api/v1/dags/"
 
     class Config:
         env_file = ".env"

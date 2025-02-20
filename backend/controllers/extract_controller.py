@@ -16,6 +16,12 @@ class ExtractionController:
             if request.way == 'JSON':
                 unzipped_files = await self.service.check_file_exists('Extracted_json_files', request.year, request.quarter)
                 if unzipped_files:
+                    print("Triggering Snowflake pipeline")
+                    pipeline_status = await self.service.trigger_snowflake_pipeline(
+                    request.year,
+                    request.quarter,
+                    request.way
+                )
                     return {
                         "message": "Files already exist in unzipped folder",
                         "status": "completed",
@@ -26,6 +32,12 @@ class ExtractionController:
             elif request.way == 'RAW':
                 unzipped_files = await self.service.check_file_exists('unziped_folder', request.year, request.quarter)
                 if unzipped_files:
+                    print("Triggering Snowflake pipeline")
+                    pipeline_status = await self.service.trigger_snowflake_pipeline(
+                    request.year,
+                    request.quarter,
+                    request.way
+                )
                     return {
                         "message": "Files already exist in unzipped folder",
                         "status": "completed",
@@ -34,6 +46,7 @@ class ExtractionController:
                     }
             
             zip_file = await self.service.find_zip_file('Finance', request.year, request.quarter)
+            
             if not zip_file:
                 raise HTTPException(
                     status_code=404,
