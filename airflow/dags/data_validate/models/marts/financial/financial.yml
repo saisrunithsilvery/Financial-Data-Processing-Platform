@@ -41,10 +41,21 @@ models:
     description: "Derived financial metrics and ratios for companies"
     columns:
       - name: company_symbol
+        description: "Company identifier"
         tests:
           - not_null
-          - unique
 
+      - name: fiscal_year
+        description: "The fiscal year for the financial metrics"
+        tests:
+          - not_null
+
+      - name: fiscal_period
+        description: "The fiscal period for the financial metrics"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Q1', 'Q2', 'Q3', 'Q4', 'FY']
 
 
 # version: 2
