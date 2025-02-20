@@ -18,7 +18,8 @@ x-airflow-common:
     SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE}
     SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE}
     SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE}
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-apache-airflow-providers-snowflake==2.1.0 apache-airflow-providers-amazon snowflake-connector-python python-dotenv boto3}
+    SNOWFLAKE_SCHEMA_DBT: ${SNOWFLAKE_SCHEMA_DBT}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-apache-airflow-providers-snowflake==2.1.0 apache-airflow-providers-amazon snowflake-connector-python python-dotenv boto3 dbt-snowflake dbt-core==1.6.5  }
   command: > 
     bash -c --user -r "pip install -r /requirements.txt && airflow scheduler"  
   volumes:

@@ -161,7 +161,7 @@ class SnowflakeService:
         """
         # Convert Q1 to q1, Q2 to q2, etc.
         formatted_quarter = quarter.lower()
-        s3_folder = f"{year}+{formatted_quarter}"
+        s3_folder = f"{year}{formatted_quarter}"
         
         return {
             "conf": {
