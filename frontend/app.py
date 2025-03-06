@@ -216,7 +216,7 @@ with tab1:
     st.header("Data Extraction")
     
     # Year and Quarter Dropdowns
-    year = st.selectbox("Select Year:", list(range(2006, 2026)))
+    year = st.selectbox("Select Year:", list(range(2009, 2024)))
     quarter = st.selectbox("Select Quarter:", ["Q1", "Q2", "Q3", "Q4"])
     ways = st.selectbox("Select Data Format:", ["RAW", "JSON", "NORMALIZED"])
     

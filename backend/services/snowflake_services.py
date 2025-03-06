@@ -15,8 +15,6 @@ class SnowflakeService:
     
     def __init__(self):
         self.settings = Settings()
-        # Add these to your Settings class
-        
         
         self.dag_mappings = {
             PipelineMode.RAW: ["loading_raw_data_from_S3_to_Snowflake"],
@@ -60,10 +58,10 @@ class SnowflakeService:
             HTTPException: For various error conditions (400, 500, 504)
         """
         try:
-            print("YEar", year)
+            print("Year", year)
             print("Quarter", quarter)
             # Validate inputs
-            if not isinstance(year, int) or year < 1900 or year > 2100:
+            if not isinstance(year, int) or year < 2006 or year > 2100:
                 raise ValueError(f"Invalid year: {year}")
             if quarter not in ['Q1', 'Q2', 'Q3', 'Q4']:
                 raise ValueError(f"Invalid quarter: {quarter}")
@@ -77,18 +75,30 @@ class SnowflakeService:
             async with httpx.AsyncClient() as client:
                 for idx, url in enumerate(urls):
                     try:
-                        # Determine current mode for NORMALIZED pipeline
-                        current_mode = (PipelineMode.RAW if idx == 0 else mode) if mode == PipelineMode.NORMALIZED else mode
+                        # Determine current DAG being triggered
+                        current_dag = self.dag_mappings[mode][idx]
+                        is_dbt_dag = current_dag == "dbt_dag"
                         
-                        # Prepare payload and add dag_run_id
-                        payload = self._prepare_payload(year, quarter)
-                        payload['dag_run_id'] = f"{current_mode.value.lower()}_{year}_{quarter}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                        # Generate a unique DAG run ID
+                        dag_run_id = f"{current_dag}_{year}_{quarter}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                        
+                        # Prepare payload based on the current DAG
+                        if is_dbt_dag:
+                            # For DBT DAG, we need to provide additional configuration
+                            payload = self._prepare_dbt_payload(year, quarter)
+                        else:
+                            # For data loading DAGs
+                            payload = self._prepare_payload(year, quarter)
+                        
+                        # Set the DAG run ID
+                        payload['dag_run_id'] = dag_run_id
                         
                         print(f"Triggering DAG at {url}")
                         print(f"Payload: {payload}")
-                        AIRFLOW_USERNAME= "airflow"
+                        
+                        AIRFLOW_USERNAME = "airflow"
                         AIRFLOW_PASSWORD = "airflow"
-                        print("Payload", payload)
+                        
                         response = await client.post(
                             url,
                             json=payload,
@@ -112,15 +122,22 @@ class SnowflakeService:
                         result = response.json()
                         result.update({
                             'execution_config': {
-                                'mode': payload['execution_mode'],
-                                'type': payload['pipeline_type'],
+                                'dag_id': current_dag,
                                 'year': year,
                                 'quarter': quarter,
-                                'dag_run_id': payload['dag_run_id']
+                                'dag_run_id': dag_run_id
                             }
                         })
                         results.append(result)
                         
+                        # If this is the first DAG in NORMALIZED mode, wait for it to complete
+                        # before triggering the DBT DAG (optional, depending on your requirements)
+                        if mode == PipelineMode.NORMALIZED and idx == 0:
+                            # You might want to add a mechanism to wait for the first DAG to complete
+                            # or at least reach a certain state before proceeding
+                            # This is just a placeholder for now
+                            print("Raw data loading triggered, proceeding to DBT transformation")
+                            
                     except httpx.RequestError as e:
                         raise HTTPException(
                             status_code=503,
@@ -145,16 +162,13 @@ class SnowflakeService:
                 detail=f"Internal server error: {str(e)}"
             )
 
-
-
     def _prepare_payload(self, year: int, quarter: str) -> Dict[str, Any]:
         """
-        Prepare payload for Snowflake pipeline based on execution mode
+        Prepare payload for data loading DAGs
         
         Args:
             year: The year for data processing
             quarter: The quarter for data processing (Q1, Q2, Q3, Q4)
-            mode: Pipeline execution mode
         
         Returns:
             Dict containing the prepared payload with s3_folder in format "year/q1"
@@ -168,6 +182,32 @@ class SnowflakeService:
                 "s3_folder": s3_folder
             }
         }
+        
+    def _prepare_dbt_payload(self, year: int, quarter: str) -> Dict[str, Any]:
+        """
+        Prepare payload specifically for DBT DAG
+        
+        Args:
+            year: The year for data processing
+            quarter: The quarter for data processing (Q1, Q2, Q3, Q4)
+        
+        Returns:
+            Dict containing the prepared payload with specific DBT configuration
+        """
+        formatted_quarter = quarter.lower()
+        s3_folder = f"{year}{formatted_quarter}"
+        
+        return {
+            "conf": {
+                "s3_folder": s3_folder,
+                "dbt_vars": {
+                    "year": year,
+                    "quarter": formatted_quarter,
+                    "run_date": datetime.now().strftime('%Y-%m-%d')
+                }
+            }
+        }
+        
     def _parse_error_response(self, response: httpx.Response) -> str:
         """Parse error response from Airflow API"""
         try:
@@ -190,13 +230,36 @@ class SnowflakeService:
             HTTPException: If status check fails
         """
         try:
-            # In a real implementation, you would query Airflow API for the status
-            return {
-                "status": "completed",
-                "dag_run_id": dag_run_id,
-                "execution_date": datetime.now().isoformat(),
-                "message": "Pipeline completed successfully"
-            }
+            # Extract the DAG ID from the dag_run_id (assuming format: "{dag_id}_{year}_{quarter}_{timestamp}")
+            dag_id = dag_run_id.split("_")[0]
+            
+            async with httpx.AsyncClient() as client:
+                url = f"{self.AIRFLOW_URL}{dag_id}/dagRuns/{dag_run_id}"
+                
+                AIRFLOW_USERNAME = "airflow"
+                AIRFLOW_PASSWORD = "airflow"
+                
+                response = await client.get(
+                    url,
+                    auth=(AIRFLOW_USERNAME, AIRFLOW_PASSWORD),
+                    timeout=60
+                )
+                
+                if response.status_code == 401:
+                    raise HTTPException(
+                        status_code=401,
+                        detail="Authentication failed for Airflow API"
+                    )
+                
+                if response.status_code != 200:
+                    error_msg = self._parse_error_response(response)
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"Airflow API error: {error_msg}"
+                    )
+                
+                return response.json()
+                
         except Exception as e:
             raise HTTPException(
                 status_code=500,
