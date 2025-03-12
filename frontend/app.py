@@ -161,6 +161,70 @@ PREDEFINED_QUERIES = {
             GROUP BY m.symbol, m.name, m.year, m.quarter
             ORDER BY m.year DESC, m.quarter DESC
         """
+    },
+    "NORMALIZED": {
+        "Balance Sheet Key Metrics": """
+            SELECT 
+                SYMBOL,
+                CONCEPT,
+                AVG(VALUE) as avg_value,
+                MAX(VALUE) as max_value,
+                MIN(VALUE) as min_value
+            FROM SEC_DATA.PUBLIC.BALANCE_SHEET
+            WHERE CONCEPT IN ('Assets', 'Liabilities', 'StockholdersEquity')
+            GROUP BY SYMBOL, CONCEPT
+            ORDER BY SYMBOL, CONCEPT
+            LIMIT 20
+        """,
+        "Income Statement Analysis": """
+            SELECT 
+                SYMBOL,
+                CONCEPT,
+                VALUE,
+                LOADED_AT
+            FROM SEC_DATA.PUBLIC.INCOME_STATEMENT
+            WHERE CONCEPT IN ('Revenue', 'NetIncome', 'GrossProfit')
+            ORDER BY LOADED_AT DESC, SYMBOL
+            LIMIT 20
+        """,
+        "Cash Flow Indicators": """
+            SELECT 
+                SYMBOL,
+                CONCEPT,
+                VALUE,
+                LOADED_AT
+            FROM SEC_DATA.PUBLIC.CASH_FLOW
+            WHERE CONCEPT IN ('OperatingCashFlow', 'InvestingCashFlow', 'FinancingCashFlow')
+            ORDER BY LOADED_AT DESC
+            LIMIT 20
+        """,
+        "Comprehensive Financial Overview": """
+            SELECT 
+                f.COMPANY_SYMBOL,
+                f.BALANCE_METRIC,
+                f.INCOME_METRIC,
+                f.CASH_FLOW_METRIC,
+                f.BALANCE_VALUE,
+                f.INCOME_VALUE,
+                f.CASH_FLOW_VALUE
+            FROM SEC_DATA.PUBLIC.FACT_FINANCIALS f
+            ORDER BY f.COMPANY_SYMBOL
+            LIMIT 20
+        """,
+        "Financial Health Indicators": """
+            SELECT 
+                bs.SYMBOL,
+                SUM(CASE WHEN bs.CONCEPT = 'Assets' THEN bs.VALUE ELSE 0 END) as total_assets,
+                SUM(CASE WHEN bs.CONCEPT = 'Liabilities' THEN bs.VALUE ELSE 0 END) as total_liabilities,
+                SUM(CASE WHEN cf.CONCEPT = 'OperatingCashFlow' THEN cf.VALUE ELSE 0 END) as operating_cash_flow,
+                SUM(CASE WHEN is.CONCEPT = 'Revenue' THEN is.VALUE ELSE 0 END) as revenue
+            FROM SEC_DATA.PUBLIC.BALANCE_SHEET bs
+            LEFT JOIN SEC_DATA.PUBLIC.CASH_FLOW cf ON bs.SYMBOL = cf.SYMBOL
+            LEFT JOIN SEC_DATA.PUBLIC.INCOME_STATEMENT is ON bs.SYMBOL = is.SYMBOL
+            GROUP BY bs.SYMBOL
+            ORDER BY total_assets DESC
+            LIMIT 15
+        """
     }
 }
 
@@ -186,6 +250,8 @@ def execute_query(query, data_format="RAW"):
     api_endpoint = "http://backend:8000/queries/execute"
     if data_format == "JSON":
         api_endpoint = "http://backend:8000/queries/execute"
+    elif data_format == "NORMALIZED":
+        api_endpoint = "http://backend:8000/queries/execute/normalized"
         
     try:
         response = requests.post(
@@ -260,7 +326,7 @@ with tab2:
     # Data format selection
     data_format = st.selectbox(
         "Select Data Format:",
-        ["RAW", "JSON"],
+        ["RAW", "JSON", "NORMALIZED"],
         key="predefined_format"
     )
     st.session_state.current_format = data_format
@@ -296,7 +362,7 @@ with tab3:
     # Data format selection for custom query
     data_format = st.selectbox(
         "Select Data Format:",
-        ["RAW", "JSON"],
+        ["RAW", "JSON", "NORMALIZED"],
         key="custom_format"
     )
     
@@ -322,7 +388,7 @@ with tab3:
         - `custom`: BOOLEAN NOT NULL
         - `abstract`: BOOLEAN NOT NULL
         """
-    else:
+    elif data_format == "JSON":
         schema_ref = """
         ### financial_metadata Table
         - `id`: INTEGER PRIMARY KEY
@@ -343,6 +409,51 @@ with tab3:
         - `info`: VARCHAR
         - `unit`: VARCHAR
         - `value`: FLOAT
+        """
+    else:  # NORMALIZED
+        schema_ref = """
+        ### SEC_DATA.PUBLIC.BALANCE_SHEET
+        - `ID`: NUMBER(38,0) NOT NULL [PK]
+        - `SYMBOL`: VARCHAR
+        - `LABEL`: VARCHAR
+        - `CONCEPT`: VARCHAR
+        - `INFO`: VARCHAR
+        - `UNIT`: VARCHAR
+        - `VALUE`: FLOAT
+        - `FILE_NAME`: VARCHAR
+        - `LOADED_AT`: TIMESTAMP_NTZ(9)
+        
+        ### SEC_DATA.PUBLIC.INCOME_STATEMENT
+        - `ID`: NUMBER(38,0) NOT NULL [PK]
+        - `SYMBOL`: VARCHAR(255)
+        - `LABEL`: VARCHAR(255)
+        - `CONCEPT`: VARCHAR(255)
+        - `INFO`: VARCHAR(255)
+        - `UNIT`: VARCHAR(255)
+        - `VALUE`: FLOAT
+        - `FILE_NAME`: VARCHAR(255)
+        - `LOADED_AT`: TIMESTAMP_NTZ(9)
+        
+        ### SEC_DATA.PUBLIC.CASH_FLOW
+        - `ID`: NUMBER(38,0) NOT NULL [PK]
+        - `SYMBOL`: VARCHAR
+        - `LABEL`: VARCHAR
+        - `CONCEPT`: VARCHAR
+        - `INFO`: VARCHAR
+        - `UNIT`: VARCHAR
+        - `VALUE`: FLOAT
+        - `FILE_NAME`: VARCHAR
+        - `LOADED_AT`: TIMESTAMP_NTZ(9)
+        
+        ### SEC_DATA.PUBLIC.FACT_FINANCIALS
+        - `COMPANY_SYMBOL`: VARCHAR
+        - `BALANCE_METRIC`: VARCHAR
+        - `INCOME_METRIC`: VARCHAR(255)
+        - `CASH_FLOW_METRIC`: VARCHAR
+        - `BALANCE_VALUE`: FLOAT
+        - `INCOME_VALUE`: FLOAT
+        - `CASH_FLOW_VALUE`: FLOAT
+        - `LOADED_AT`: TIMESTAMP_NTZ(9)
         """
     
     with st.expander("Table Schema Reference"):
