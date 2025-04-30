@@ -1,6 +1,6 @@
 
 
-# Assignment 2 - Financial Data Processing Platform  
+ Financial Data Processing Platform  
 
 ## Project Links and Resources  
 
