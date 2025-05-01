@@ -215,9 +215,9 @@ Assignment02/
 
 ## Team Members  
 
-- **Sai Priya Veerabomma** - 33.3% (Backend, Airflow)  
-- **Sai Srunith Silvery** - 33.3% (Frontend, API Development)  
-- **Vishal Prasanna** - 33.3% (Deployment, Snowflake Configuration)  
+
+- **Sai Srunith Silvery** - 33.3% ( Backend, Airflow,Deployment, Snowflake Configuration)  
+- **Vishal Prasanna** - 33.3% (Frontend, API Development)  
 
 ---
 
