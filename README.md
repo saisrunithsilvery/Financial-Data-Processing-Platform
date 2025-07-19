@@ -212,12 +212,7 @@ Assignment02/
 - **LICENSE**: Licensing details for the project.
 - **README.md**: Main project documentation and setup guide.
 
-
-## Team Members  
-
-
-- **Sai Srunith Silvery** - 33.3% ( Backend, Airflow,Deployment, Snowflake Configuration)  
-- **Vishal Prasanna** - 33.3% (Frontend, API Development)  
+ 
 
 ---
 
